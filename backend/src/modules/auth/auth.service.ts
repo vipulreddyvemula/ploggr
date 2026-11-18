@@ -30,7 +30,7 @@ export class AuthService {
   async login({ email, password }: LoginDto) {
     const user = await this.users.findForAuthentication(email);
     const matches = await verify(user?.passwordHash ?? await this.dummyHash, password);
-    if (!matches || !user) throw new UnauthorizedException('Invalid email or password');
+    if (!matches || !user?.passwordHash) throw new UnauthorizedException('Invalid email or password');
     return this.db.transaction(manager => this.sessions.issue(manager, user));
   }
 }

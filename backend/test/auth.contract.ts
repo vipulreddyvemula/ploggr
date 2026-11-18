@@ -48,7 +48,7 @@ export function authContract(source: () => DataSource) {
     it('recovers a lost rotation response and revokes only the replayed session', async () => {
       const { body: login } = await post('login', credentials).expect(200);
       const other = await post('login', credentials).expect(200);
-      const first = { refreshToken: login.refreshToken, requestId: randomUUID() };
+      const first = { refreshToken: login.refreshToken, requestId: randomUUID().toUpperCase() };
       const [a, b] = await Promise.all([post('refresh', first).expect(200), post('refresh', first).expect(200)]);
       expect(a.body.refreshToken).not.toBe(login.refreshToken);
       expect(a.body.refreshToken).toBe(b.body.refreshToken);

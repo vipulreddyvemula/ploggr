@@ -34,7 +34,8 @@ export class SessionService {
     return this.response(user, session.id, token);
   }
 
-  async refresh(token: string, requestId: string) {
+  async refresh(token: string, rawRequestId: string) {
+    const requestId = rawRequestId.toLowerCase();
     const digest = digestOf(token);
     const result = await this.db.transaction(async manager => {
       // Serialize every mutation of this device, then read the credential at READ COMMITTED.
