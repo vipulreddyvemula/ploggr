@@ -59,3 +59,45 @@ After setup, run `make check` from the repository root. To verify the public JSO
 ```bash
 flutter test --dart-define-from-file=config/development.example.json test/core/config/app_config_test.dart
 ```
+
+## Android authentication sessions
+
+With a configured API URL, the Android root initializes the Riverpod
+`sessionControllerProvider`. Its controller exposes `signup`, `login`,
+`accessToken`, and `logout` for feature code. The preview screens keep their
+existing navigation. Release authentication requires HTTPS. Development builds
+can use the emulator and USB addresses above.
+
+A successful signup or login returns an identity and a device session. The
+controller publishes the identity after saving the refresh credential in
+Android Keystore-backed secure storage. The record is scoped to the API base
+URL and excluded from Android cloud backup and device transfer. Access JWTs
+live in memory. Expiry triggers renewal. Startup and foreground retry can
+recover the session after a restart or network outage. A network or storage
+failure yields `unavailable`; a rejected refresh clears the record.
+
+Before rotating, the controller saves a UUID request ID with the refresh token.
+Retrying after a dropped response or interrupted write uses that ID again.
+Concurrent callers share a renewal. Logout clears the local record and asks
+the backend to revoke the device session. If the API is unreachable, local
+sign-out still takes effect and the caller receives a network failure.
+Uninstall and clear-data remove device access. Android sends no server-side
+revocation callback for uninstall.
+
+### Android acceptance check
+
+Use an empty, disposable emulator and a disposable local backend. Set
+`AUTH_ACCESS_TTL_SECONDS=12` in that backend's environment before starting
+Nest. Run the following from the repository root, substituting the emulator
+serial and the API's host port.
+
+```bash
+tool/test_android_session.sh emulator-5554 3000
+```
+
+The script installs a debug probe, uses ADB reverse, and exercises the production
+controller and secure storage against the real API. It verifies the same user
+after force-stop, rejection of the expired access JWT, silent renewal, logout,
+clear-data, and uninstall/reinstall. The probe creates disposable accounts. The
+script removes its APK and forwarding rule on exit. Unit tests for storage and
+network failures run with `flutter test test/features/auth`.

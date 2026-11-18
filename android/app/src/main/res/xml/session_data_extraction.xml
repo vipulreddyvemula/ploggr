@@ -1,0 +1,10 @@
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="ploggr_sessions.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:ploggr_sessions.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="ploggr_sessions.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:ploggr_sessions.xml" />
+    </device-transfer>
+</data-extraction-rules>

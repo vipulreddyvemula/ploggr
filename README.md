@@ -2,7 +2,9 @@
 
 Ploggr is a Flutter app for people who pick up litter while walking or jogging. Its 18-screen preview lets you try a session, report sample litter, join a cleanup, and explore community and profile screens. Preview activity lives in memory until the app restarts.
 
-**Profile → Settings → Connection check** is the live integration. It calls NestJS, which runs a read-only spatial query against PostgreSQL and PostGIS. Login and signup currently accept preview input. The backend supports email/password authentication and renewable device sessions. [Authentication contract](backend/docs/maintenance.md#authentication) [Foundation decisions](https://github.com/devBuildersunique/ploggr/issues/2#issuecomment-5240945427)
+**Profile → Settings → Connection check** calls NestJS, which runs a read-only spatial query against PostgreSQL and PostGIS. [Foundation decisions](https://github.com/devBuildersunique/ploggr/issues/2#issuecomment-5240945427)
+
+The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. The login and signup screens still accept preview input. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
 
 ## Get a checkout
 
@@ -22,7 +24,7 @@ cd ploggr-m18
 
 ## Run the complete foundation
 
-The verified development path uses Linux x86-64, GNU Make, Flutter 3.50.0 (Dart 3.14), Node 24.15 or later in the 24.x line, npm, and Docker with Compose supporting `--wait`. The published PostGIS image targets amd64. Linux desktop builds require clang, CMake, Ninja, pkg-config and GTK 3 development headers. Check your toolchain with `flutter doctor -v` and Docker access with `docker info`. If you use nvm, select the project version with `nvm install 24 && nvm use 24`. [Flutter Linux setup](https://docs.flutter.dev/platform-integration/linux/setup)
+The verified development path uses Linux x86-64, GNU Make, Flutter 3.50.0 (Dart 3.14), Node 24.15 or later in the 24.x line, npm, and Docker with Compose supporting `--wait`. The published PostGIS image targets amd64. Linux desktop builds require clang, CMake, Ninja, pkg-config, and the development headers for GTK 3 and libsecret. Check your toolchain with `flutter doctor -v` and Docker access with `docker info`. If you use nvm, select the project version with `nvm install 24 && nvm use 24`. [Flutter Linux setup](https://docs.flutter.dev/platform-integration/linux/setup)
 
 Run these commands from the **repository root**.
 
