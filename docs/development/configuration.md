@@ -86,6 +86,13 @@ sign-out still takes effect and the caller receives a network failure.
 Uninstall and clear-data remove device access. Android sends no server-side
 revocation callback for uninstall.
 
+Settings loads the signed-in email from the protected `GET auth/me` endpoint.
+For protected feature calls, use `protectedApiProvider` with a method and a
+relative API path. It attaches a bearer token for this API, shares concurrent
+renewal requests and retries a rejected GET or HEAD once. Callers decide how
+to recover a failed write. Public health and authentication calls continue
+to use `apiClientProvider`.
+
 ### Android acceptance check
 
 Use an empty, disposable emulator and a disposable local backend. Set

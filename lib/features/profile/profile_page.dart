@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../routes/app_routes.dart';
+import '../../routes/auth_navigation.dart';
+import '../../core/network/protected_api.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/bottom_navigation.dart';
@@ -354,20 +356,23 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
   Widget _settings() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const EcoCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('You’re exploring the preview', style: AppText.heading),
-            SizedBox(height: 8),
-            Text(
-              'Your preview activity and profile details stay on this device. '
-              'A connection check contacts the configured server. '
-              'Authentication, notifications, live tracking, and cloud storage are not connected.',
-            ),
-          ],
+      if (ref.watch(authModeProvider) == AuthMode.live)
+        const _AccountIdentity()
+      else
+        const EcoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('You’re exploring the preview', style: AppText.heading),
+              SizedBox(height: 8),
+              Text(
+                'Your preview activity and profile details stay on this device. '
+                'A connection check contacts the configured server. '
+                'Authentication, notifications, live tracking, and cloud storage are not connected.',
+              ),
+            ],
+          ),
         ),
-      ),
       const SizedBox(height: 16),
       ListTile(
         leading: const Icon(Icons.network_check, color: AppColors.primary),
@@ -393,4 +398,30 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
       ),
     ],
   );
+}
+
+class _AccountIdentity extends ConsumerWidget {
+  const _AccountIdentity();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final identity = ref.watch(currentIdentityProvider);
+    return EcoCard(
+      child: identity.when(
+        data: (user) => ListTile(
+          title: const Text('Signed in as'),
+          subtitle: Text(user.email),
+        ),
+        loading: () => const Text('Checking account…'),
+        error: (_, _) => Column(
+          children: [
+            const Text('Could not load your account.'),
+            TextButton(
+              onPressed: () => ref.invalidate(currentIdentityProvider),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

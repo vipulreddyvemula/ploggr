@@ -16,8 +16,13 @@ final authModeProvider = Provider<AuthMode>((ref) {
 /// Owned by one router. Destinations come only from recognized app routes.
 class AuthNavigation extends ChangeNotifier {
   String? _destination;
+  bool _returnToLogin = false;
 
   void sessionChanged(SessionState? previous, SessionState next) {
+    if (next.phase == SessionPhase.signingOut) {
+      _destination = null;
+      _returnToLogin = true;
+    }
     notifyListeners();
   }
 
@@ -32,13 +37,20 @@ class AuthNavigation extends ChangeNotifier {
         path == AppRoutes.signup ||
         path == AppRoutes.onboarding;
     final splash = path == AppRoutes.splash;
+    if (phase == SessionPhase.signingOut) {
+      return splash ? null : AppRoutes.splash;
+    }
+    if (_returnToLogin && phase == SessionPhase.signedOut) {
+      if (path != AppRoutes.login) return AppRoutes.login;
+      _returnToLogin = false;
+    }
     final known =
         state.error == null &&
         !state.uri.hasScheme &&
         !state.uri.hasAuthority &&
         state.fullPath == path;
     final protected = known && !entry && !splash;
-    if (phase == SessionPhase.signedIn) {
+    if (phase == SessionPhase.signedIn || phase == SessionPhase.renewing) {
       if (protected) return null;
       final destination = _destination ?? AppRoutes.home;
       _destination = null;

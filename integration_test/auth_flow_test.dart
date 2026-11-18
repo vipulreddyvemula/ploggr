@@ -4,6 +4,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ploggr/app.dart';
 import 'package:ploggr/core/config/app_config.dart';
+import 'package:ploggr/core/network/api_client_provider.dart';
+import 'package:dio/dio.dart';
 import 'package:ploggr/core/config/app_config_provider.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
 import 'package:ploggr/routes/app_router.dart';
@@ -66,6 +68,21 @@ void main() {
       await waitForSignIn();
       final created = container.read(sessionControllerProvider).user;
       expect(created?.email, email);
+      router.go('/profile/settings');
+      await tester.pumpAndSettle();
+      final deadline = DateTime.now().add(const Duration(seconds: 20));
+      while (find.text(email).evaluate().isEmpty &&
+          DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text(email), findsOneWidget);
+      final anonymous = await container
+          .read(apiClientProvider)!
+          .get<Object?>(
+            'auth/me',
+            options: Options(validateStatus: (_) => true),
+          );
+      expect(anonymous.statusCode, 401);
       await sessions.logout();
       router.go('/login');
       await tester.pumpAndSettle();

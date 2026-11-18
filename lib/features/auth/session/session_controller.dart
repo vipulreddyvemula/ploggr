@@ -6,8 +6,17 @@ import 'package:uuid/uuid.dart';
 import 'session_api.dart';
 import 'session_store.dart';
 
-enum SessionPhase { signedOut, restoring, submitting, signedIn, unavailable }
+enum SessionPhase {
+  signedOut,
+  restoring,
+  submitting,
+  signingOut,
+  renewing,
+  signedIn,
+  unavailable,
+}
 
+typedef AccessCredential = ({String token, int generation, int revision});
 typedef SessionState = ({SessionPhase phase, SessionUser? user});
 
 final sessionControllerProvider =
@@ -21,6 +30,7 @@ class SessionController extends Notifier<SessionState> {
   Future<String?>? _refreshing;
   Future<void> _storageQueue = Future.value();
   int _generation = 0;
+  int _revision = 0;
   bool _logoutPending = false;
   bool _signingIn = false;
 
@@ -107,6 +117,39 @@ class SessionController extends Notifier<SessionState> {
     }
   }
 
+  bool owns(AccessCredential credential) =>
+      credential.generation == _generation;
+
+  /// Compare the rejected issuance, since two JWTs issued in one second can
+  /// have the same text. All callers join the same in-flight rotation.
+  Future<AccessCredential?> credential({AccessCredential? rejected}) async {
+    if (state.phase != SessionPhase.signedIn &&
+        state.phase != SessionPhase.renewing) {
+      return null;
+    }
+    final generation = _generation;
+    if (rejected != null) {
+      if (!owns(rejected)) return null;
+      if (rejected.revision == _revision) {
+        _expiry?.cancel();
+        _active = null;
+      }
+    }
+    final token = await accessToken();
+    if (generation != _generation || token == null || _active == null) {
+      return null;
+    }
+    return (
+      token: _active!.accessToken,
+      generation: generation,
+      revision: _revision,
+    );
+  }
+
+  Future<void> rejectCredential(AccessCredential credential) async {
+    if (owns(credential) && credential.revision == _revision) await logout();
+  }
+
   Future<String?> accessToken() {
     if (_signingIn || _logoutPending || _store == null || _api == null) {
       return Future.value();
@@ -127,7 +170,11 @@ class SessionController extends Notifier<SessionState> {
     final store = _store!;
     final api = _api!;
     _active = null;
-    state = (phase: SessionPhase.restoring, user: null);
+    final user = state.user;
+    state = (
+      phase: user == null ? SessionPhase.restoring : SessionPhase.renewing,
+      user: user,
+    );
     try {
       final record = await _storage(() async {
         if (generation != _generation) return null;
@@ -159,6 +206,7 @@ class SessionController extends Notifier<SessionState> {
           if (generation == _generation) await store.clear();
         });
         if (generation == _generation) {
+          _invalidate();
           state = (phase: SessionPhase.signedOut, user: null);
         }
         return null;
@@ -183,6 +231,7 @@ class SessionController extends Notifier<SessionState> {
       throw StateError('Received expired access token');
     }
     _active = bundle;
+    _revision++;
     state = (phase: SessionPhase.signedIn, user: bundle.user);
     _expiry?.cancel();
     _expiry = Timer(remaining, () {
@@ -198,7 +247,7 @@ class SessionController extends Notifier<SessionState> {
     final store = _store;
     final api = _api;
     _logoutPending = true;
-    state = (phase: SessionPhase.restoring, user: null);
+    state = (phase: SessionPhase.signingOut, user: null);
     StoredSession? prior;
     bool cleared = false;
     try {
