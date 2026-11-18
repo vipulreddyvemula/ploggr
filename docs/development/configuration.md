@@ -64,8 +64,10 @@ flutter test --dart-define-from-file=config/development.example.json test/core/c
 
 With a configured API URL, the Android root initializes the Riverpod
 `sessionControllerProvider`. Its controller exposes `signup`, `login`,
-`accessToken`, and `logout` for feature code. The preview screens keep their
-existing navigation. Release authentication requires HTTPS. Development builds
+`accessToken`, and `logout` for feature code. On configured Android builds, onboarding opens live Login and Sign Up.
+Signup requires an email and a 15–128 character password. A protected route
+opened before sign-in resumes after successful authentication. Debug builds
+without live Android authentication keep the local preview. Release authentication requires HTTPS. Development builds
 can use the emulator and USB addresses above.
 
 A successful signup or login returns an identity and a device session. The

@@ -1,0 +1,56 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../features/auth/session/session_controller.dart';
+import '../features/auth/session/session_store.dart';
+import 'app_routes.dart';
+
+enum AuthMode { live, preview, unavailable }
+
+final authModeProvider = Provider<AuthMode>((ref) {
+  if (ref.watch(sessionStoreProvider) != null) return AuthMode.live;
+  return kDebugMode ? AuthMode.preview : AuthMode.unavailable;
+});
+
+/// Owned by one router. Destinations come only from recognized app routes.
+class AuthNavigation extends ChangeNotifier {
+  String? _destination;
+
+  void sessionChanged(SessionState? previous, SessionState next) {
+    notifyListeners();
+  }
+
+  String? redirect(AuthMode mode, SessionPhase phase, GoRouterState state) {
+    if (mode == AuthMode.preview) return null;
+    final path = state.uri.path;
+    if (mode == AuthMode.unavailable) {
+      return path == AppRoutes.login ? null : AppRoutes.login;
+    }
+    final entry =
+        path == AppRoutes.login ||
+        path == AppRoutes.signup ||
+        path == AppRoutes.onboarding;
+    final splash = path == AppRoutes.splash;
+    final known =
+        state.error == null &&
+        !state.uri.hasScheme &&
+        !state.uri.hasAuthority &&
+        state.fullPath == path;
+    final protected = known && !entry && !splash;
+    if (phase == SessionPhase.signedIn) {
+      if (protected) return null;
+      final destination = _destination ?? AppRoutes.home;
+      _destination = null;
+      return destination;
+    }
+    if (protected) _destination = path;
+    if (phase == SessionPhase.unavailable || phase == SessionPhase.restoring) {
+      if (entry && phase == SessionPhase.restoring) return null;
+      return splash ? null : AppRoutes.splash;
+    }
+    if (entry) return null;
+    if (splash && _destination == null) return AppRoutes.onboarding;
+    return AppRoutes.login;
+  }
+}

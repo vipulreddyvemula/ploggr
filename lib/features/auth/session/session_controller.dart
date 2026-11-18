@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'session_api.dart';
 import 'session_store.dart';
 
-enum SessionPhase { signedOut, restoring, signedIn, unavailable }
+enum SessionPhase { signedOut, restoring, submitting, signedIn, unavailable }
 
 typedef SessionState = ({SessionPhase phase, SessionUser? user});
 
@@ -76,7 +76,7 @@ class SessionController extends Notifier<SessionState> {
     _invalidate();
     _signingIn = true;
     final generation = _generation;
-    state = (phase: SessionPhase.restoring, user: null);
+    state = (phase: SessionPhase.submitting, user: null);
     try {
       final SessionBundle bundle;
       try {

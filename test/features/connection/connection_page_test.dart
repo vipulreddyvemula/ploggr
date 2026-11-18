@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ploggr/app.dart';
 import 'package:ploggr/core/config/app_config.dart';
 import 'package:ploggr/core/config/app_config_provider.dart';
+import 'package:ploggr/features/auth/session/session_store.dart';
 import 'package:ploggr/features/connection/connection_service.dart';
 import 'package:ploggr/routes/app_router.dart';
 import 'package:ploggr/routes/app_routes.dart';
@@ -40,6 +41,7 @@ void main() {
             apiBaseUrl: configured ? 'http://localhost:3000/api/' : null,
           ),
         ),
+        sessionStoreProvider.overrideWithValue(null),
         connectionServiceProvider.overrideWithValue(service),
         initialLocationProvider.overrideWithValue(AppRoutes.settings),
       ],

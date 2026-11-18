@@ -4,7 +4,7 @@ Ploggr is a Flutter app for people who pick up litter while walking or jogging. 
 
 **Profile → Settings → Connection check** calls NestJS, which runs a read-only spatial query against PostgreSQL and PostGIS. [Foundation decisions](https://github.com/devBuildersunique/ploggr/issues/2#issuecomment-5240945427)
 
-The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. The login and signup screens still accept preview input. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
+The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. On Android with a configured API, Login and Sign Up establish a live session. Desktop development and unconfigured debug builds retain the sample preview. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
 
 ## Get a checkout
 
