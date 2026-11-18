@@ -41,12 +41,17 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     await exec('npm', ['exec', '--', 'jest', '--config', 'jest.database.config.mjs', '--runInBand']);
     await npm('build');
     await npm('migration:revert:prod');
+    const rolledBack = await npm('migration:show:prod', { capture: true });
+    assert.match(rolledBack, /\[X\].*VerifyPostgis/);
+    assert.match(rolledBack, /\[ \].*CreateUsers/);
     await npm('migration:run:prod');
     await npm('db:check:prod');
 
     // Reuse the dynamically selected host port when recreating the container.
     await compose(['up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90']);
-    assert.match(await npm('migration:show:prod', { capture: true }), /\[X\].*VerifyPostgis/);
+    const applied = await npm('migration:show:prod', { capture: true });
+    assert.match(applied, /\[X\].*VerifyPostgis/);
+    assert.match(applied, /\[X\].*CreateUsers/);
     await npm('db:check:prod');
 
     for (const overrides of [{ DB_PASSWORD: 'incorrect_password' }, { DB_PORT: await unusedPort() }]) {

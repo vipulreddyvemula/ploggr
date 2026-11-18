@@ -1,7 +1,9 @@
 import type { DataSourceOptions } from 'typeorm';
 import { validateDatabaseEnvironment, type DatabaseEnvironment } from '../config/environment';
 import { loadEnvironmentFile } from '../config/environment-file';
+import { User } from '../modules/users/user.entity';
 import { VerifyPostgis1794873600000 } from './migrations/1794873600000-VerifyPostgis';
+import { CreateUsers1795018043320 } from './migrations/1795018043320-CreateUsers';
 
 export function loadDatabaseEnvironment(envFile?: string): DatabaseEnvironment {
   loadEnvironmentFile(envFile);
@@ -21,9 +23,10 @@ export function createDatabaseOptions(env: DatabaseEnvironment): DataSourceOptio
     ssl: false,
     synchronize: false,
     migrationsRun: false,
+    uuidExtension: 'pgcrypto', // Selects PostgreSQL's built-in gen_random_uuid().
     installExtensions: false,
-    entities: [],
-    migrations: [VerifyPostgis1794873600000],
+    entities: [User],
+    migrations: [VerifyPostgis1794873600000, CreateUsers1795018043320],
     migrationsTableName: 'migrations',
     logging: false,
   };

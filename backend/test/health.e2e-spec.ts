@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Global, INestApplication, Logger, Module, Post } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { IsString, MinLength } from 'class-validator';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { DatabaseModule } from '../src/database/database.module';
+import { User } from '../src/modules/users/user.entity';
 
 const query = jest.fn();
 
@@ -40,7 +42,10 @@ describe('API foundation (HTTP)', () => {
     const module = await Test.createTestingModule({
       imports: [AppModule],
       controllers: [PolicyController],
-    }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).compile();
+    })
+      .overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+      .overrideProvider(getRepositoryToken(User)).useValue({})
+      .compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();

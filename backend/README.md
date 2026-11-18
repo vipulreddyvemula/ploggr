@@ -53,7 +53,7 @@ Nest and the CLI load the same ignored `.env` from source or compiled code. Proc
 | `npm run check` | Lint, TypeScript checking, and unit/HTTP tests pass without a database. |
 | `npm run build` | Compiled JavaScript is written to `dist/`. |
 | `npm run test:e2e` | Runs only the ordinary HTTP tests. |
-| `npm run test:database` | Creates an isolated Compose project, verifies migrations, permissions, spatial queries, restart and failure behavior, then removes its test resources. |
+| `npm run test:database` | Creates an isolated Compose project, verifies migrations, user identity persistence, permissions, spatial queries, restart and failure behavior, then removes its test resources. |
 | `npm run db:check` | Verifies the currently configured database and spatial functions. |
 
 The isolated integration suite rebuilds `dist/`. Use a separate checkout if a server is using that build output. After a hard interruption, inspect the printed `ploggr-test-...` project name before removing that disposable project with `docker compose --env-file .env.example -p <test-project> down --volumes`.
@@ -75,7 +75,7 @@ Open psql inside the current development container using its configured database
 docker compose exec database bash -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
-At the psql prompt, run `SELECT version();`, `SELECT PostGIS_Full_Version();`, or `SELECT * FROM migrations;`. Use `\dt` to list tables and `\q` to exit. The foundation contains migration metadata and extension-owned objects such as `spatial_ref_sys`. [Migrations and permissions](docs/maintenance.md#migrations)
+At the psql prompt, run `SELECT version();`, `SELECT PostGIS_Full_Version();`, or `SELECT * FROM migrations;`. Use `\dt` to list tables and `\q` to exit. The schema includes `users`, migration history and extension-owned objects such as `spatial_ref_sys`. [Migrations and permissions](docs/maintenance.md#migrations) · [User identity persistence](docs/maintenance.md#user-identity-persistence)
 
 ## Stop and restart
 

@@ -53,7 +53,8 @@ npm run migration:show
 
 The foundation migration calls `PostGIS_Full_Version()` to assert that privileged
 provisioning has already installed PostGIS. Success is recorded in `migrations`.
-Extension-owned tables and schemas are expected; no domain tables are created.
+The next migration, `CreateUsers`, creates the `users` table on fresh databases
+and existing M1 volumes. Extension-owned tables and schemas are expected.
 
 ### Roll back intentionally
 
@@ -64,9 +65,10 @@ npm run migration:revert
 ```
 
 Review that migration's `down()` implementation first. The M1.5 migration removes
-only its history entry on rollback and deliberately retains PostGIS. Future
-migrations may change or delete application data. To reapply a reverted migration,
-run `npm run migration:run`.
+only its history entry on rollback and deliberately retains PostGIS. Reverting
+`CreateUsers` drops the `users` table and deletes its rows. It preserves PostGIS
+and the M1 migration record. `npm run migration:run` recreates an empty table
+after that rollback.
 
 ### Add a future schema change
 
@@ -103,6 +105,20 @@ After `npm run build`, the following commands load JavaScript from `dist/`:
 
 The `:prod` suffix selects compiled execution; it does not change environment
 variables, enable TLS, or configure a production deployment.
+
+## User identity persistence
+
+PostgreSQL generates each user's UUID. Later ownership columns can reference
+`users.id` as a foreign key. The database requires a nonempty, lowercase email
+with surrounding spaces removed and enforces uniqueness on that value.
+
+Nest modules can import `UsersModule` and inject `UsersService`. `create` accepts
+an email and a precomputed password hash. `findByEmail` and `create` both use
+PostgreSQL's `lower(btrim(...))` to normalize the email. `findById` accepts a UUID.
+Both lookup methods return `null` on a miss. Results contain `id` and `email`,
+and TypeORM omits `password_hash` from ordinary entity reads. Attempts to reuse
+an email fail on `users_email_key` with PostgreSQL code `23505`, even when the
+inserts run concurrently.
 
 ## Structure
 

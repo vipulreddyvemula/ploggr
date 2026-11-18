@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { User } from '../modules/users/user.entity';
 import { createDatabaseOptions, loadDatabaseEnvironment } from './database.config';
+import { VerifyPostgis1794873600000 } from './migrations/1794873600000-VerifyPostgis';
+import { CreateUsers1795018043320 } from './migrations/1795018043320-CreateUsers';
 
 describe('shared database configuration', () => {
   it('disables implicit schema changes and uses explicit credentials', () => {
@@ -11,8 +14,8 @@ describe('shared database configuration', () => {
     })).toMatchObject({
       type: 'postgres', host: '127.0.0.1', port: 5433, database: 'test',
       username: 'app', password: 'test_password', connectTimeoutMS: 5000,
-      synchronize: false, migrationsRun: false, installExtensions: false,
-      entities: [], migrations: [expect.any(Function)],
+      synchronize: false, migrationsRun: false, uuidExtension: 'pgcrypto', installExtensions: false,
+      entities: [User], migrations: [VerifyPostgis1794873600000, CreateUsers1795018043320],
     });
   });
 
