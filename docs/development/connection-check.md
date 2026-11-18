@@ -30,6 +30,8 @@ Use `http://127.0.0.1:3000/api/` in the local Flutter JSON. Forwarding maps the 
 adb -s "$DEVICE_ID" reverse --remove tcp:3000
 ```
 
+On configured Android, sign up or log in before opening **Profile → Settings → Connection check**. Settings also shows the email returned by the authenticated API.
+
 Android declares internet access in the main manifest. The debug build additionally permits local HTTP. The emulator can use the host alias `10.0.2.2` directly. [Configuration reference](configuration.md#device-addresses)
 
 ## Failure and recovery
@@ -53,4 +55,4 @@ From the repository root, run a native test against an already running stack wit
 flutter test integration_test/connection_check_test.dart -d linux --dart-define-from-file=config/development.local.json
 ```
 
-Substitute the Android device ID for `linux` to exercise the same flow on a phone or emulator. For a deliberate database outage, append `--dart-define=EXPECT_DATABASE_UNAVAILABLE=true` and restore the database afterward. The full runner verifies the database and API outages, both recoveries and the offline path. [Foundation validation report](foundation-validation.md)
+For Android, substitute the ID of a disposable device and use a healthy disposable backend. The test creates a test account if the app has no session. For a deliberate database outage on Linux, append `--dart-define=EXPECT_DATABASE_UNAVAILABLE=true` and restore the database afterward. The full runner verifies the database and API outages, both recoveries and the offline path. [Foundation validation report](foundation-validation.md)

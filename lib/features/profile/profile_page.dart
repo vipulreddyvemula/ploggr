@@ -7,6 +7,8 @@ import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/bottom_navigation.dart';
 import '../plogging/application/session_controller.dart';
+import '../auth/logout.dart';
+import '../auth/session/session_controller.dart' show sessionControllerProvider;
 import '../litter/application/litter_controller.dart';
 import 'profile_controller.dart';
 
@@ -353,51 +355,64 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
       ),
     ],
   );
-  Widget _settings() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      if (ref.watch(authModeProvider) == AuthMode.live)
-        const _AccountIdentity()
-      else
-        const EcoCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('You’re exploring the preview', style: AppText.heading),
-              SizedBox(height: 8),
-              Text(
-                'Your preview activity and profile details stay on this device. '
-                'A connection check contacts the configured server. '
-                'Authentication, notifications, live tracking, and cloud storage are not connected.',
-              ),
-            ],
+  Widget _settings() {
+    final live = ref.watch(authModeProvider) == AuthMode.live;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (live)
+          const _AccountIdentity()
+        else
+          const EcoCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('You’re exploring the preview', style: AppText.heading),
+                SizedBox(height: 8),
+                Text(
+                  'Your preview activity and profile details stay on this device. '
+                  'A connection check contacts the configured server. '
+                  'Authentication, notifications, live tracking, and cloud storage are not connected.',
+                ),
+              ],
+            ),
           ),
+        const SizedBox(height: 16),
+        ListTile(
+          leading: const Icon(Icons.network_check, color: AppColors.primary),
+          title: const Text('Connection check'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => openPage(context, AppRoutes.connection),
         ),
-      const SizedBox(height: 16),
-      ListTile(
-        leading: const Icon(Icons.network_check, color: AppColors.primary),
-        title: const Text('Connection check'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => openPage(context, AppRoutes.connection),
-      ),
-      ListTile(
-        leading: const Icon(Icons.slideshow_rounded, color: AppColors.primary),
-        title: const Text('Replay onboarding'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => switchPage(context, AppRoutes.onboarding),
-      ),
-      ListTile(
-        leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
-        title: const Text('Leave preview'),
-        subtitle: const Text('Return to the welcome screen'),
-        onTap: () => switchPage(context, AppRoutes.login),
-      ),
-      const SizedBox(height: 20),
-      const PreviewNote(
-        text: 'Appearance follows the reference’s light green theme.',
-      ),
-    ],
-  );
+        if (!live)
+          ListTile(
+            leading: const Icon(
+              Icons.slideshow_rounded,
+              color: AppColors.primary,
+            ),
+            title: const Text('Replay onboarding'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => switchPage(context, AppRoutes.onboarding),
+          ),
+        ListTile(
+          leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
+          title: Text(live ? 'Log out' : 'Leave preview'),
+          subtitle: live ? null : const Text('Return to the welcome screen'),
+          onTap: live
+              ? () => logoutFromDevice(
+                  context,
+                  ref.read(sessionControllerProvider.notifier),
+                )
+              : () => switchPage(context, AppRoutes.login),
+        ),
+        const SizedBox(height: 20),
+        if (!live)
+          const PreviewNote(
+            text: 'Appearance follows the reference’s light green theme.',
+          ),
+      ],
+    );
+  }
 }
 
 class _AccountIdentity extends ConsumerWidget {

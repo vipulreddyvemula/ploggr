@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ploggr/main.dart' as app;
+import 'package:uuid/uuid.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -35,9 +36,35 @@ void main() {
     }
 
     app.main();
-    await waitForText('Skip');
-    await tap('Skip');
-    await tap('Explore the preview');
+    if (Platform.isAndroid && const bool.hasEnvironment('API_BASE_URL')) {
+      // Configured Android requires a real session to open Settings. Run
+      // this variant against a disposable backend with its database online.
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (find.text('Skip').evaluate().isEmpty &&
+          find.text('Profile').evaluate().isEmpty &&
+          find.text('Welcome back!').evaluate().isEmpty &&
+          DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      if (find.text('Profile').evaluate().isEmpty) {
+        if (find.text('Skip').evaluate().isNotEmpty) await tap('Skip');
+        await tap('Sign up');
+        final fields = find.byType(TextFormField);
+        final password = const Uuid().v4();
+        await tester.enterText(
+          fields.at(0),
+          '${const Uuid().v4()}@example.test',
+        );
+        await tester.enterText(fields.at(1), password);
+        await tester.enterText(fields.at(2), password);
+        await tap('Create Account');
+        await waitForText('Profile');
+      }
+    } else {
+      await waitForText('Skip');
+      await tap('Skip');
+      await tap('Explore the preview');
+    }
     await tap('Profile');
     await tap('Settings');
     await tap('Connection check');

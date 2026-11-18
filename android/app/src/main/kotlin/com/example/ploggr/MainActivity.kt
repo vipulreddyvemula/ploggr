@@ -14,14 +14,32 @@ class MainActivity : FlutterActivity() {
             messenger.makeBackgroundTaskQueue(),
         )
         channel.setMethodCallHandler { call, result ->
-            if (call.method != "flush") {
-                result.notImplemented()
-            } else {
-                // flutter_secure_storage uses apply(). Wait for its encrypted preferences
-                // to reach disk before sending a one-time refresh or acknowledging logout.
-                val prefs = getSharedPreferences("ploggr_sessions", MODE_PRIVATE)
-                if (prefs.edit().commit()) result.success(null)
-                else result.error("storage_write", "Could not persist session change", null)
+            when (call.method) {
+                "flush" -> {
+                    // Wait for the secure storage plugin's encrypted apply() to reach disk.
+                    val prefs = getSharedPreferences("ploggr_sessions", MODE_PRIVATE)
+                    if (prefs.edit().commit()) result.success(null)
+                    else result.error("storage_write", "Could not persist session change", null)
+                }
+                "isLogoutPending", "setLogoutPending" -> {
+                    // A boolean survives process death even when encrypted storage cannot be opened.
+                    val scope = call.argument<String>("scope")
+                    if (scope == null) {
+                        result.error("missing_scope", "Missing API scope", null)
+                        return@setMethodCallHandler
+                    }
+                    val prefs = getSharedPreferences("ploggr_session_lifecycle", MODE_PRIVATE)
+                    if (call.method == "isLogoutPending") {
+                        result.success(prefs.getBoolean(scope, false))
+                    } else {
+                        val editor = prefs.edit()
+                        if (call.argument<Boolean>("pending") == true) editor.putBoolean(scope, true)
+                        else editor.remove(scope)
+                        if (editor.commit()) result.success(null)
+                        else result.error("storage_write", "Could not persist logout status", null)
+                    }
+                }
+                else -> result.notImplemented()
             }
         }
     }

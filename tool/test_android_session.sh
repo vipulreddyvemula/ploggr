@@ -46,6 +46,18 @@ user_id=$(run_probe create)
 [[ $user_id =~ ^[0-9a-f-]{36}$ ]]
 [[ $(run_probe inspect) == "$user_id" ]]
 [[ $(run_probe renew) == "$user_id" ]]
+"${adb_device[@]}" reverse --remove "tcp:$port"
+[[ $(run_probe inspect) == unavailable ]]
+"${adb_device[@]}" reverse "tcp:$port" "tcp:$port"
+[[ $(run_probe inspect) == "$user_id" ]]
+[[ $(run_probe revoke) == expired ]]
+[[ $(run_probe inspect) == signedOut ]]
+[[ $(run_probe create) =~ ^[0-9a-f-]{36}$ ]]
+"${adb_device[@]}" reverse --remove "tcp:$port"
+[[ $(run_probe offline-logout) == signedOut ]]
+"${adb_device[@]}" reverse "tcp:$port" "tcp:$port"
+[[ $(run_probe inspect) == signedOut ]]
+[[ $(run_probe create) =~ ^[0-9a-f-]{36}$ ]]
 [[ $(run_probe logout) == signedOut ]]
 [[ $(run_probe inspect) == signedOut ]]
 [[ $(run_probe create) =~ ^[0-9a-f-]{36}$ ]]

@@ -11,9 +11,17 @@ enum SessionPhase {
   restoring,
   submitting,
   signingOut,
+  logoutFailed,
+  expired,
   renewing,
   signedIn,
-  unavailable,
+  unavailable;
+
+  bool get canSignIn => this == signedOut || this == expired;
+}
+
+class _PendingLogout implements Exception {
+  const _PendingLogout();
 }
 
 typedef AccessCredential = ({String token, int generation, int revision});
@@ -80,7 +88,7 @@ class SessionController extends Notifier<SessionState> {
     if (api == null || _store == null) {
       throw StateError('Mobile authentication is unavailable');
     }
-    if (state.phase != SessionPhase.signedOut) {
+    if (!state.phase.canSignIn) {
       throw StateError('Finish the current session first');
     }
     _invalidate();
@@ -118,7 +126,9 @@ class SessionController extends Notifier<SessionState> {
   }
 
   bool owns(AccessCredential credential) =>
-      credential.generation == _generation;
+      credential.generation == _generation &&
+      (state.phase == SessionPhase.signedIn ||
+          state.phase == SessionPhase.renewing);
 
   /// Compare the rejected issuance, since two JWTs issued in one second can
   /// have the same text. All callers join the same in-flight rotation.
@@ -151,7 +161,11 @@ class SessionController extends Notifier<SessionState> {
   }
 
   Future<String?> accessToken() {
-    if (_signingIn || _logoutPending || _store == null || _api == null) {
+    if (state.phase.canSignIn ||
+        _signingIn ||
+        _logoutPending ||
+        _store == null ||
+        _api == null) {
       return Future.value();
     }
     final active = _active;
@@ -176,12 +190,15 @@ class SessionController extends Notifier<SessionState> {
       user: user,
     );
     try {
+      var corrupt = false;
       final record = await _storage(() async {
         if (generation != _generation) return null;
+        if (await store.isLogoutPending()) throw const _PendingLogout();
         StoredSession? stored;
         try {
           stored = await store.read();
         } on FormatException {
+          corrupt = true;
           await store.clear();
           return null;
         }
@@ -192,7 +209,13 @@ class SessionController extends Notifier<SessionState> {
       });
       if (generation != _generation) return null;
       if (record == null) {
-        state = (phase: SessionPhase.signedOut, user: null);
+        if (corrupt || user != null) _invalidate();
+        state = (
+          phase: corrupt || user != null
+              ? SessionPhase.expired
+              : SessionPhase.signedOut,
+          user: null,
+        );
         return null;
       }
       try {
@@ -207,10 +230,16 @@ class SessionController extends Notifier<SessionState> {
         });
         if (generation == _generation) {
           _invalidate();
-          state = (phase: SessionPhase.signedOut, user: null);
+          state = (phase: SessionPhase.expired, user: null);
         }
         return null;
       }
+    } on _PendingLogout {
+      if (generation == _generation) {
+        _logoutPending = true;
+        state = (phase: SessionPhase.logoutFailed, user: null);
+      }
+      return null;
     } catch (_) {
       if (generation == _generation) {
         state = (phase: SessionPhase.unavailable, user: null);
@@ -252,10 +281,12 @@ class SessionController extends Notifier<SessionState> {
     bool cleared = false;
     try {
       await _storage(() async {
+        await store?.setLogoutPending(true);
         try {
           prior = await store?.read();
         } finally {
           await store?.clear();
+          await store?.setLogoutPending(false);
           cleared = true;
         }
       });
@@ -263,7 +294,7 @@ class SessionController extends Notifier<SessionState> {
       if (generation == _generation) {
         _logoutPending = !cleared;
         state = (
-          phase: cleared ? SessionPhase.signedOut : SessionPhase.unavailable,
+          phase: cleared ? SessionPhase.signedOut : SessionPhase.logoutFailed,
           user: null,
         );
       }

@@ -7,6 +7,12 @@ import 'package:ploggr/core/constants/app_colors.dart';
 import 'package:ploggr/core/theme/app_theme.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
 import 'package:ploggr/routes/app_router.dart';
+import 'package:ploggr/features/cleanups/cleanup_controller.dart';
+import 'package:ploggr/features/community/community_controller.dart';
+import 'package:ploggr/features/litter/application/litter_controller.dart';
+import 'package:ploggr/features/plogging/application/session_controller.dart'
+    show sessionProvider, impactProvider;
+import 'package:ploggr/features/profile/profile_controller.dart';
 
 class PloggrApp extends ConsumerStatefulWidget {
   const PloggrApp({super.key});
@@ -17,10 +23,29 @@ class PloggrApp extends ConsumerStatefulWidget {
 
 class _PloggrAppState extends ConsumerState<PloggrApp> {
   late final AppLifecycleListener _lifecycle;
+  String? _accountId;
 
   @override
   void initState() {
     super.initState();
+    ref.listenManual(sessionControllerProvider, (_, next) {
+      final id = next.user?.id;
+      if (_accountId != null &&
+          (next.phase == SessionPhase.signingOut ||
+              next.phase == SessionPhase.expired ||
+              next.phase == SessionPhase.signedOut ||
+              (id != null && id != _accountId))) {
+        // Dispose per-account preview state, including any running plog timer.
+        ref.invalidate(sessionProvider);
+        ref.invalidate(impactProvider);
+        ref.invalidate(profileProvider);
+        ref.invalidate(litterProvider);
+        ref.invalidate(communityProvider);
+        ref.invalidate(joinedCleanupsProvider);
+        _accountId = null;
+      }
+      if (id != null) _accountId = id;
+    }, fireImmediately: true);
     _lifecycle = AppLifecycleListener(
       onResume: () {
         final phase = ref.read(sessionControllerProvider).phase;
@@ -40,7 +65,6 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(sessionControllerProvider.notifier);
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(

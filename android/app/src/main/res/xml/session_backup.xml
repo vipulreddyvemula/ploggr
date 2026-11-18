@@ -1,4 +1,5 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="ploggr_sessions.xml" />
+    <exclude domain="sharedpref" path="ploggr_session_lifecycle.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:ploggr_sessions.xml" />
 </full-backup-content>

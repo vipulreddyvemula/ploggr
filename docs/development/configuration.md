@@ -31,7 +31,7 @@ Run `make app` from the root. It selects Linux and passes the JSON with `--dart-
 
 `AppConfig` accepts an absolute HTTP or HTTPS URL with a hostname and valid port. Credentials, whitespace, a query string, and fragments are rejected at startup. Validation errors name the key without echoing its value. Include the backend's `/api/` prefix. The parser normalizes a missing trailing slash so the relative path `health/ready` preserves that prefix.
 
-When the key is omitted, Flutter runs the offline preview and the connection button is disabled. A configured app sends its first readiness request when the user taps **Check connection**. Tests can override `appConfigProvider` explicitly.
+When the key is omitted in a debug build, Flutter runs the offline preview and the connection button is disabled. A configured app sends its first readiness request when the user taps **Check connection**. Tests can override `appConfigProvider` explicitly.
 
 ## Device addresses
 
@@ -66,9 +66,9 @@ With a configured API URL, the Android root initializes the Riverpod
 `sessionControllerProvider`. Its controller exposes `signup`, `login`,
 `accessToken`, and `logout` for feature code. On configured Android builds, onboarding opens live Login and Sign Up.
 Signup requires an email and a 15–128 character password. A protected route
-opened before sign-in resumes after successful authentication. Debug builds
-without live Android authentication keep the local preview. Release authentication requires HTTPS. Development builds
-can use the emulator and USB addresses above.
+opened before sign-in resumes after successful authentication. Use **Skip → Sign up** to create the account, or **Skip → Login** for an existing account.
+Desktop development and unconfigured Android debug builds retain **Explore the preview**.
+Configured Android stays in live mode during outages. Release builds require Android and an HTTPS API URL.
 
 A successful signup or login returns an identity and a device session. The
 controller publishes the identity after saving the refresh credential in
@@ -76,13 +76,16 @@ Android Keystore-backed secure storage. The record is scoped to the API base
 URL and excluded from Android cloud backup and device transfer. Access JWTs
 live in memory. Expiry triggers renewal. Startup and foreground retry can
 recover the session after a restart or network outage. A network or storage
-failure yields `unavailable`; a rejected refresh clears the record.
+failure opens a session check with **Retry**. A rejected refresh clears the record and opens Login.
 
 Before rotating, the controller saves a UUID request ID with the refresh token.
 Retrying after a dropped response or interrupted write uses that ID again.
 Concurrent callers share a renewal. Logout clears the local record and asks
 the backend to revoke the device session. If the API is unreachable, local
-sign-out still takes effect and the caller receives a network failure.
+sign-out still takes effect and the UI reports that server sign-out could not be confirmed.
+Choose **Profile → Settings → Log out**. Logout clears navigation history and in-memory
+activity. If secure deletion fails, **Retry logout** finishes the operation. An app-private
+boolean keeps restoration blocked across a process restart until deletion succeeds.
 Uninstall and clear-data remove device access. Android sends no server-side
 revocation callback for uninstall.
 
@@ -107,6 +110,15 @@ tool/test_android_session.sh emulator-5554 3000
 The script installs a debug probe, uses ADB reverse, and exercises the production
 controller and secure storage against the real API. It verifies the same user
 after force-stop, rejection of the expired access JWT, silent renewal, logout,
-clear-data, and uninstall/reinstall. The probe creates disposable accounts. The
+clear-data, uninstall/reinstall, revoked sessions, network recovery, and offline logout.
+The probe creates disposable accounts. The
 script removes its APK and forwarding rule on exit. Unit tests for storage and
 network failures run with `flutter test test/features/auth`.
+
+To exercise the real signup and login screens, Settings email, account switching,
+and Back after logout, run the UI test against the same disposable API. Restore
+USB forwarding after the probe exits, or use the emulator host address below.
+
+```bash
+flutter test -d emulator-5554 integration_test/auth_flow_test.dart --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/
+```

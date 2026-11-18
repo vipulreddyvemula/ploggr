@@ -31,7 +31,7 @@ class _AccountFormState extends ConsumerState<AccountForm> {
 
   Future<void> _submit() async {
     if (_busy ||
-        ref.read(sessionControllerProvider).phase != SessionPhase.signedOut ||
+        !ref.read(sessionControllerProvider).phase.canSignIn ||
         !_form.currentState!.validate()) {
       return;
     }
@@ -66,8 +66,7 @@ class _AccountFormState extends ConsumerState<AccountForm> {
   @override
   Widget build(BuildContext context) {
     final signup = widget.signup;
-    final ready =
-        ref.watch(sessionControllerProvider).phase == SessionPhase.signedOut;
+    final ready = ref.watch(sessionControllerProvider).phase.canSignIn;
     return AppPage(
       title: '',
       backTo: signup ? AppRoutes.login : AppRoutes.onboarding,

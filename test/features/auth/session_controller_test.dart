@@ -184,7 +184,7 @@ void main() {
       );
       expect(
         container.read(sessionControllerProvider).phase,
-        SessionPhase.signedOut,
+        SessionPhase.expired,
       );
       expect(store.value, isNull);
     });

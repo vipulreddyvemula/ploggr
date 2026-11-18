@@ -37,7 +37,8 @@ class AuthNavigation extends ChangeNotifier {
         path == AppRoutes.signup ||
         path == AppRoutes.onboarding;
     final splash = path == AppRoutes.splash;
-    if (phase == SessionPhase.signingOut) {
+    if (phase == SessionPhase.signingOut ||
+        phase == SessionPhase.logoutFailed) {
       return splash ? null : AppRoutes.splash;
     }
     if (_returnToLogin && phase == SessionPhase.signedOut) {
@@ -62,7 +63,9 @@ class AuthNavigation extends ChangeNotifier {
       return splash ? null : AppRoutes.splash;
     }
     if (entry) return null;
-    if (splash && _destination == null) return AppRoutes.onboarding;
+    if (splash && _destination == null && phase != SessionPhase.expired) {
+      return AppRoutes.onboarding;
+    }
     return AppRoutes.login;
   }
 }

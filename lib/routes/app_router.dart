@@ -5,6 +5,7 @@ import '../features/auth/account_form.dart';
 import '../features/auth/session/session_controller.dart';
 import 'auth_navigation.dart';
 import '../features/auth/login_page.dart';
+import '../features/auth/logout.dart';
 import '../features/auth/signup_page.dart';
 import '../features/home/end_session.dart';
 import '../features/home/home_page.dart';
@@ -122,29 +123,37 @@ class _SessionGate extends ConsumerWidget {
   const _SessionGate();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unavailable =
-        ref.watch(sessionControllerProvider).phase == SessionPhase.unavailable;
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: unavailable
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Could not verify your session.'),
-                    TextButton(
-                      onPressed: () => ref
-                          .read(sessionControllerProvider.notifier)
-                          .accessToken(),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                )
-              : const CircularProgressIndicator(
-                  semanticsLabel: 'Checking session',
-                ),
-        ),
+    final phase = ref.watch(sessionControllerProvider).phase;
+    final sessions = ref.read(sessionControllerProvider.notifier);
+    final Widget content = switch (phase) {
+      SessionPhase.unavailable => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Could not verify your session.'),
+          TextButton(
+            onPressed: sessions.accessToken,
+            child: const Text('Retry'),
+          ),
+          TextButton(
+            onPressed: () => logoutFromDevice(context, sessions),
+            child: const Text('Log out'),
+          ),
+        ],
       ),
+      SessionPhase.logoutFailed => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Secure storage could not finish signing you out.'),
+          TextButton(
+            onPressed: () => logoutFromDevice(context, sessions),
+            child: const Text('Retry logout'),
+          ),
+        ],
+      ),
+      _ => const CircularProgressIndicator(semanticsLabel: 'Checking session'),
+    };
+    return Scaffold(
+      body: SafeArea(child: Center(child: content)),
     );
   }
 }

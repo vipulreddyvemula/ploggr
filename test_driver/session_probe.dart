@@ -9,6 +9,9 @@ import 'package:ploggr/core/config/app_config.dart';
 import 'package:ploggr/core/config/app_config_provider.dart';
 import 'package:ploggr/core/network/api_client_provider.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
+import 'package:ploggr/features/auth/session/session_store.dart';
+import 'package:ploggr/features/auth/session/session_api.dart';
+import 'package:ploggr/core/network/protected_api.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +42,21 @@ Future<void> main() async {
       );
     } else if (command == 'logout') {
       await sessions.logout();
+    } else if (command == 'offline-logout') {
+      try {
+        await sessions.logout();
+      } on AuthRequestFailure catch (failure) {
+        if (failure.status != null) rethrow;
+      }
+    } else if (command == 'revoke') {
+      final record = await container.read(sessionStoreProvider)!.read();
+      await container.read(sessionApiProvider)!.logout(record!.refreshToken);
+      try {
+        await container.read(protectedApiProvider).request('GET', 'auth/me');
+        throw StateError('A revoked session was accepted');
+      } on ProtectedApiFailure catch (failure) {
+        if (failure.status != 401) rethrow;
+      }
     } else if (command == 'renew') {
       final old = await sessions.accessToken();
       final identity = container.read(sessionControllerProvider).user!;

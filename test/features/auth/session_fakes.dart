@@ -15,6 +15,12 @@ class MemoryStore implements SessionStore {
   bool failSave = false;
   bool locked = false;
   bool corrupt = false;
+  bool failClear = false;
+  bool pendingLogout = false;
+  @override
+  Future<bool> isLogoutPending() async => pendingLogout;
+  @override
+  Future<void> setLogoutPending(bool pending) async => pendingLogout = pending;
   @override
   Future<StoredSession?> read() async {
     if (locked) throw StateError('Storage locked');
@@ -30,6 +36,7 @@ class MemoryStore implements SessionStore {
 
   @override
   Future<void> clear() async {
+    if (failClear) throw StateError('Delete failed');
     corrupt = false;
     value = null;
   }

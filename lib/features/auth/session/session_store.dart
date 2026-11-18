@@ -47,6 +47,13 @@ class SessionStore {
 
   static const _channel = MethodChannel('ploggr/session-storage');
 
+  Future<bool> isLogoutPending() async =>
+      (await _channel.invokeMethod<bool>('isLogoutPending', {'scope': _key}))!;
+  Future<void> setLogoutPending(bool pending) => _channel.invokeMethod<void>(
+    'setLogoutPending',
+    {'scope': _key, 'pending': pending},
+  );
+
   Future<void> save(StoredSession record) async {
     await _storage.write(key: _key, value: record.encode());
     await _channel.invokeMethod<void>('flush');
