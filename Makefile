@@ -13,6 +13,7 @@ help:
 	  'make down      Stop the development database and keep its volume'
 
 setup: backend/.env config/development.local.json
+	node backend/tool/setup-auth-key.mjs
 	flutter pub get --enforce-lockfile
 	npm --prefix backend ci --include=dev
 

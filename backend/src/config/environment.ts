@@ -9,6 +9,8 @@ export interface DatabaseEnvironment {
 export interface Environment extends DatabaseEnvironment {
   NODE_ENV: 'development' | 'test' | 'production';
   HOST: string;
+  AUTH_SECRET: string;
+  AUTH_ACCESS_TTL_SECONDS: number;
   PORT: number;
 }
 
@@ -34,11 +36,24 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
 
   const port = parsePort(config.PORT, 'PORT', 3000);
 
+  const database = validateDatabaseEnvironment(config);
+  const secret = config.AUTH_SECRET;
+  if (typeof secret !== 'string' || !/^[0-9a-f]{64}$/i.test(secret)) {
+    throw new Error('AUTH_SECRET must be 32 random bytes encoded as 64 hex characters');
+  }
+
+  const ttl = Number(config.AUTH_ACCESS_TTL_SECONDS ?? 900);
+  if (!Number.isInteger(ttl) || ttl < 1 || ttl > 900) {
+    throw new Error('AUTH_ACCESS_TTL_SECONDS must be an integer from 1 through 900');
+  }
+
   return {
+    AUTH_ACCESS_TTL_SECONDS: ttl,
+    AUTH_SECRET: secret,
     NODE_ENV: nodeEnv,
     HOST: host.trim(),
     PORT: port,
-    ...validateDatabaseEnvironment(config),
+    ...database,
   };
 }
 

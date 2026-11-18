@@ -10,6 +10,7 @@ Use Linux x86-64, Node 24.15+ in the 24.x line, npm, and Docker Engine with Comp
 docker info --format '{{.ServerVersion}}'
 npm ci --include=dev
 [ -f .env ] || cp .env.example .env
+node tool/setup-auth-key.mjs
 ```
 
 Choose local database credentials in `.env` before creating the first volume. Then start the database, run migrations, and check PostGIS.

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Equal, Raw, Repository, type FindOptionsWhere } from 'typeorm';
+import { EntityManager, Equal, Raw, Repository, type FindOptionsWhere } from 'typeorm';
 import { User } from './user.entity';
 
 export type UserIdentity = Pick<User, 'id' | 'email'>;
@@ -12,8 +12,9 @@ const normalizedEmail = 'lower(btrim(:email))';
 export class UsersService {
   constructor(@InjectRepository(User) private readonly users: Repository<User>) {}
 
-  async create({ email, passwordHash }: { email: string; passwordHash: string }): Promise<UserIdentity> {
-    const result = await this.users.createQueryBuilder()
+  async create({ email, passwordHash }: { email: string; passwordHash: string }, manager?: EntityManager): Promise<UserIdentity> {
+    const repository = manager?.getRepository(User) ?? this.users;
+    const result = await repository.createQueryBuilder()
       .insert()
       .values({ email: () => normalizedEmail, passwordHash })
       .setParameter('email', email)
@@ -22,6 +23,13 @@ export class UsersService {
 
     const [identity]: UserIdentity[] = result.raw;
     return identity;
+  }
+
+  findForAuthentication(email: string): Promise<User | null> {
+    return this.users.createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where(`user.email = ${normalizedEmail}`, { email })
+      .getOne();
   }
 
   findById(id: string): Promise<UserIdentity | null> {

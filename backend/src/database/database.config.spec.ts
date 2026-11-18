@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AuthSession, RefreshCredential } from '../modules/auth/session.entity';
+import { CreateAuthSessions1795020000000 } from './migrations/1795020000000-CreateAuthSessions';
 import { User } from '../modules/users/user.entity';
 import { createDatabaseOptions, loadDatabaseEnvironment } from './database.config';
 import { VerifyPostgis1794873600000 } from './migrations/1794873600000-VerifyPostgis';
@@ -15,7 +17,7 @@ describe('shared database configuration', () => {
       type: 'postgres', host: '127.0.0.1', port: 5433, database: 'test',
       username: 'app', password: 'test_password', connectTimeoutMS: 5000,
       synchronize: false, migrationsRun: false, uuidExtension: 'pgcrypto', installExtensions: false,
-      entities: [User], migrations: [VerifyPostgis1794873600000, CreateUsers1795018043320],
+      entities: [User, AuthSession, RefreshCredential], migrations: [VerifyPostgis1794873600000, CreateUsers1795018043320, CreateAuthSessions1795020000000],
     });
   });
 

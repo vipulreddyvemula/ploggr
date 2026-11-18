@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { authContract } from './auth.contract';
 import { randomUUID } from 'node:crypto';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
@@ -8,6 +9,7 @@ import { createDatabaseOptions, loadDatabaseEnvironment } from '../src/database/
 import { checkDatabase } from '../src/database/database-check';
 import { VerifyPostgis1794873600000 } from '../src/database/migrations/1794873600000-VerifyPostgis';
 import { CreateUsers1795018043320 } from '../src/database/migrations/1795018043320-CreateUsers';
+import { CreateAuthSessions1795020000000 } from '../src/database/migrations/1795020000000-CreateAuthSessions';
 import { User } from '../src/modules/users/user.entity';
 import { UsersService } from '../src/modules/users/users.service';
 import request from 'supertest';
@@ -39,15 +41,19 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     });
   });
 
-  it('applies both migrations on a fresh database and upgrades from M1 after rollback', async () => {
+  it('applies all migrations on a fresh database and upgrades from M1 after rollback', async () => {
     expect(await source.showMigrations()).toBe(true);
     expect((await source.runMigrations()).map(({ name }) => name)).toEqual([
       VerifyPostgis1794873600000.name,
       CreateUsers1795018043320.name,
+      CreateAuthSessions1795020000000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
     expect(await source.runMigrations()).toHaveLength(0);
 
+    await source.undoLastMigration();
+    expect(await source.query("SELECT to_regclass('public.auth_sessions') AS sessions")).toEqual([{ sessions: null }]);
+    expect(await source.query("SELECT to_regclass('public.users') AS users")).toEqual([{ users: 'users' }]);
     await source.undoLastMigration();
     expect(await source.query('SELECT name FROM migrations')).toEqual([
       { name: VerifyPostgis1794873600000.name },
@@ -55,11 +61,11 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     expect(await source.query("SELECT to_regclass('public.users') AS users")).toEqual([{ users: null }]);
     expect((await checkDatabase(source)).postgis).toContain('POSTGIS=');
     expect(await source.showMigrations()).toBe(true);
-    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateUsers1795018043320.name]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name]);
     expect(await source.showMigrations()).toBe(false);
   });
 
-  it('has only the migration history and users tables outside PostGIS', async () => {
+  it('has the identity and session tables registered outside PostGIS', async () => {
     // Extension-owned tables (e.g. spatial_ref_sys) are infrastructure, not domain tables.
     const tables = await source.query(`
       SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -69,9 +75,11 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
             AND d.objid = c.oid AND d.deptype = 'e'
         ) ORDER BY c.relname
     `);
-    expect(tables).toEqual([{ name: 'migrations' }, { name: 'users' }]);
+    expect(tables).toEqual([{ name: 'auth_refresh_tokens' }, { name: 'auth_sessions' }, { name: 'migrations' }, { name: 'users' }]);
     expect((await source.driver.createSchemaBuilder().log()).upQueries).toEqual([]);
   });
+
+  authContract(() => source);
 
   describe('user identity persistence', () => {
     let module: TestingModule;

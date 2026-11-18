@@ -2,6 +2,7 @@
 // this setup and receives its isolated Compose configuration from the runner.
 Object.assign(process.env, {
   NODE_ENV: 'test',
+  AUTH_SECRET: process.getBuiltinModule('node:crypto').randomBytes(32).toString('hex'),
   HOST: '127.0.0.1',
   PORT: '3000',
   DB_HOST: '127.0.0.1',

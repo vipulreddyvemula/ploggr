@@ -281,3 +281,30 @@ This run used Flutter 3.50.0, Dart 3.14.0, Dio 5.11.1, Node.js 26.13.1, Docker
 29.9.2, PostgreSQL 18.7, and PostGIS 3.7.0. Documentation links/anchors, shell/JSON
 examples, Android XML, and the debug-only placement of the HTTP policy were
 checked. The temporary services and test USB forwarding were cleaned up afterward.
+
+## Authentication
+
+Run `make setup` or, from the backend directory with a local .env, run
+`node tool/setup-auth-key.mjs`. Keep AUTH_SECRET (32 random bytes in hex) stable
+across API restarts and replicas. Supply it via the environment in production
+and use HTTPS for credentials. Database CLI commands use only DB settings.
+Changing the key invalidates access JWTs and outstanding encrypted retry results.
+
+All routes below are under `/api/auth`. Signup and login accept email and
+password. Signup requires 15–128 characters. The API preserves password spaces
+and uses Argon2id. Both return a user object (id and email), accessToken and
+refreshToken. Validation failures return 400, duplicate signup 409, and wrong
+login credentials 401. Signup returns 201 and login returns 200.
+
+Access JWTs default to 900 seconds. AUTH_ACCESS_TTL_SECONDS accepts 1–900 for shorter lifetimes.
+Send the access JWT as a bearer token to GET me. POST refresh accepts
+refreshToken and a UUID v4 requestId. Persist this ID before the request and
+reuse it on retry. A retry returns the same successor while that successor
+is current. A spent token presented under a different ID revokes the device
+session. POST logout accepts refreshToken and returns 204 idempotently.
+Each login has an independent session with no inactivity timeout. Session and
+spent-token rows are deleted together on revocation or user deletion.
+
+Run `npm run test:database` for the HTTP and PostgreSQL contract. Reverting
+CreateAuthSessions signs out every device by dropping both session tables.
+User identities and password hashes survive that rollback.

@@ -1,6 +1,7 @@
 import { validateEnvironment } from './environment';
 
 describe('environment configuration', () => {
+  const secret = 'af'.repeat(32);
   const credentials = { DB_USER: 'ploggr', DB_PASSWORD: 'test_password' };
   const database = {
     ...credentials,
@@ -10,21 +11,30 @@ describe('environment configuration', () => {
   };
 
   it('provides local development defaults', () => {
-    expect(validateEnvironment(credentials)).toEqual({
+    expect(validateEnvironment({ ...credentials, AUTH_SECRET: secret })).toEqual({
       NODE_ENV: 'development',
       HOST: '127.0.0.1',
       PORT: 3000,
-      ...database,
+      ...database, AUTH_SECRET: secret, AUTH_ACCESS_TTL_SECONDS: 900,
     });
   });
 
   it('accepts environment overrides and converts PORT to a number', () => {
-    expect(validateEnvironment({ ...credentials, NODE_ENV: 'production', HOST: '0.0.0.0', PORT: '8080' }))
-      .toEqual({ NODE_ENV: 'production', HOST: '0.0.0.0', PORT: 8080, ...database });
+    expect(validateEnvironment({ ...credentials, AUTH_SECRET: secret, NODE_ENV: 'production', HOST: '0.0.0.0', PORT: '8080' }))
+      .toEqual({ NODE_ENV: 'production', HOST: '0.0.0.0', PORT: 8080, AUTH_SECRET: secret, AUTH_ACCESS_TTL_SECONDS: 900, ...database });
   });
 
   it.each(['', 'abc', '3000.5', '0', '-1', '65536', '3e3'])('rejects invalid PORT=%j', (PORT) => {
     expect(() => validateEnvironment({ PORT })).toThrow('PORT must be an integer');
+  });
+
+  it.each([undefined, '', 'short', 'z'.repeat(64)])('rejects invalid auth secrets', AUTH_SECRET => {
+    expect(() => validateEnvironment({ ...credentials, AUTH_SECRET })).toThrow('AUTH_SECRET must be');
+  });
+
+  it.each([0, 901, 1.1, 'bad'])('rejects invalid access token lifetime', AUTH_ACCESS_TTL_SECONDS => {
+    expect(() => validateEnvironment({ ...credentials, AUTH_SECRET: secret, AUTH_ACCESS_TTL_SECONDS }))
+      .toThrow('AUTH_ACCESS_TTL_SECONDS');
   });
 
   it('rejects an unsupported environment', () => {
@@ -37,7 +47,7 @@ describe('environment configuration', () => {
 
   it('accepts database overrides without trimming passwords', () => {
     expect(validateEnvironment({
-      DB_HOST: ' db.example ', DB_PORT: '5433', DB_NAME: 'other',
+      AUTH_SECRET: secret, DB_HOST: ' db.example ', DB_PORT: '5433', DB_NAME: 'other',
       DB_USER: ' app ', DB_PASSWORD: ' password ',
     })).toMatchObject({
       DB_HOST: 'db.example', DB_PORT: 5433, DB_NAME: 'other',

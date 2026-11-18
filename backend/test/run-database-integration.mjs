@@ -24,6 +24,7 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '3000',
     DB_HOST: '127.0.0.1', DB_PORT: '0', DB_NAME: 'ploggr_test',
     DB_USER: 'ploggr_test', DB_PASSWORD: randomBytes(24).toString('hex'),
+    AUTH_SECRET: randomBytes(32).toString('hex'),
     POSTGRES_PASSWORD: randomBytes(24).toString('hex'),
   };
   const exec = (cmd, args, options) => run(cmd, args, { cwd: backend, env, signal, ...options });
@@ -43,7 +44,8 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     await npm('migration:revert:prod');
     const rolledBack = await npm('migration:show:prod', { capture: true });
     assert.match(rolledBack, /\[X\].*VerifyPostgis/);
-    assert.match(rolledBack, /\[ \].*CreateUsers/);
+    assert.match(rolledBack, /\[X\].*CreateUsers/);
+    assert.match(rolledBack, /\[ \].*CreateAuthSessions/);
     await npm('migration:run:prod');
     await npm('db:check:prod');
 
@@ -52,6 +54,7 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     const applied = await npm('migration:show:prod', { capture: true });
     assert.match(applied, /\[X\].*VerifyPostgis/);
     assert.match(applied, /\[X\].*CreateUsers/);
+    assert.match(applied, /\[X\].*CreateAuthSessions/);
     await npm('db:check:prod');
 
     for (const overrides of [{ DB_PASSWORD: 'incorrect_password' }, { DB_PORT: await unusedPort() }]) {
