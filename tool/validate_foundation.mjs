@@ -1,51 +1,14 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { run, runCli } from '../backend/test/commands.mjs';
 import { backend, runDatabaseIntegration, unusedPort } from '../backend/test/run-database-integration.mjs';
+import { startApi, waitUntil } from './validation_api.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const nativeTest = 'integration_test/connection_check_test.dart';
-
-async function waitUntil(check, description, signal, timeout) {
-  const deadline = Date.now() + timeout;
-  do {
-    signal.throwIfAborted();
-    if (await check()) return;
-    await delay(100, undefined, { signal });
-  } while (Date.now() < deadline);
-  throw new Error(`Timed out waiting for ${description}`);
-}
-
-function startApi(env) {
-  const child = spawn(process.execPath, ['dist/main.js'], {
-    cwd: backend, env, stdio: ['ignore', 'pipe', 'inherit'],
-  });
-  const closed = once(child, 'close');
-  let listening = false;
-  child.stdout.setEncoding('utf8').on('data', chunk => {
-    process.stdout.write(chunk);
-    if (chunk.includes('API listening at')) listening = true;
-  });
-  return {
-    async ready(signal) {
-      await waitUntil(() => {
-        if (child.exitCode !== null || child.signalCode) throw new Error('Nest exited during startup');
-        return listening;
-      }, 'Nest startup', signal, 30_000);
-    },
-    async stop() {
-      child.kill('SIGTERM');
-      const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
-      try { await closed; } finally { clearTimeout(timer); }
-    },
-  };
-}
 
 async function checkLiveStack({ env, compose, signal }) {
   env.PORT = await unusedPort();

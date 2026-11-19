@@ -72,6 +72,7 @@ Flutter screen → Riverpod controller → Dio → GET /api/health/ready
 | `make help` | List the everyday commands. |
 | `make check` | After setup, run Flutter analysis and unit/widget tests, then backend lint, type-checking and unit/HTTP tests. Works without Docker. |
 | `make validate` | Install locked dependencies, build both applications, verify migrations and PostGIS, and drive a real Linux app through database and API outages and recovery. Uses a disposable Compose project and random ports. |
+| `make validate-auth DEVICE=emulator-5554` | Verify signup, login, identity, session persistence, and logout on an empty Android emulator against an isolated API and database. [M2 acceptance report](docs/development/authentication-validation.md) |
 | `flutter build apk --debug` | Build an Android debug APK with the Android toolchain. |
 
 Full validation requires Docker and a Linux display. Use `xvfb-run -a make validate` on headless Linux with Xvfb and xauth installed. CI runs the same Node runner. Expect `Foundation validation passed.` Use a separate checkout while a watch server or another build is using the same output directories. [Foundation validation and security report](docs/development/foundation-validation.md)

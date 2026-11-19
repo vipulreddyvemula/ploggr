@@ -98,6 +98,12 @@ to use `apiClientProvider`.
 
 ### Android acceptance check
 
+For the complete run, start an empty Android emulator and run
+`make validate-auth DEVICE=emulator-5554` using its serial. The runner starts
+its own API and database. [M2 acceptance report](authentication-validation.md)
+
+To run the device checks individually, follow the steps below.
+
 Use an empty, disposable emulator and a disposable local backend. Set
 `AUTH_ACCESS_TTL_SECONDS=12` in that backend's environment before starting
 Nest. Run the following from the repository root, substituting the emulator

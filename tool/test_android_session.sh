@@ -1,25 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Use a disposable emulator and a disposable API with AUTH_ACCESS_TTL_SECONDS=12.
+# Use an empty emulator and a disposable API. The persistence probe expects a 12-second access TTL.
 device=${1:?Pass the disposable emulator serial}
 port=${2:?Pass the host port of the disposable API}
-[[ $device == emulator-* && $port =~ ^[0-9]+$ ]]
+suite=${3:-persistence}
+[[ $device =~ ^emulator-[0-9]+$ && $port =~ ^[0-9]+$ ]]
+[[ $suite == persistence || $suite == forms ]]
 adb_device=(adb -s "$device")
 package=com.example.ploggr
-if "${adb_device[@]}" shell pm path "$package" | grep -q '^package:'; then
+packages=$("${adb_device[@]}" shell pm list packages "$package" | tr -d '\r')
+if grep -Fxq "package:$package" <<<"$packages"; then
   echo "Choose a disposable emulator without Ploggr installed." >&2
   exit 1
 fi
-flutter build apk --debug -t test_driver/session_probe.dart \
-  --dart-define="API_BASE_URL=http://127.0.0.1:$port/api/"
-apk=build/app/outputs/flutter-apk/app-debug.apk
-"${adb_device[@]}" reverse "tcp:$port" "tcp:$port"
+"${adb_device[@]}" reverse --no-rebind "tcp:$port" "tcp:$port"
 cleanup() {
   "${adb_device[@]}" uninstall "$package" >/dev/null 2>&1 || true
   "${adb_device[@]}" reverse --remove "tcp:$port" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+if [[ $suite == forms ]]; then
+  flutter test --no-pub -d "$device" integration_test/auth_flow_test.dart \
+    --dart-define="API_BASE_URL=http://127.0.0.1:$port/api/"
+  exit
+fi
+flutter build apk --debug -t test_driver/session_probe.dart \
+  --dart-define="API_BASE_URL=http://127.0.0.1:$port/api/"
+apk=build/app/outputs/flutter-apk/app-debug.apk
 install_probe() { "${adb_device[@]}" install "$apk" >/dev/null; }
 run_probe() {
   local command=$1 result

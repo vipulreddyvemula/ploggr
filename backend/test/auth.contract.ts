@@ -1,7 +1,7 @@
 import { type INestApplication, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { randomUUID, hkdfSync } from 'node:crypto';
+import { createHash, randomUUID, hkdfSync } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
@@ -43,6 +43,29 @@ export function authContract(source: () => DataSource) {
       await me(signup.accessToken).expect(401);
       await post('refresh', { refreshToken: signup.refreshToken, requestId: randomUUID() }).expect(401);
       await me(login.body.accessToken).expect(200, signup.user);
+    });
+
+    it('invalid submissions leave account and session storage consistent', async () => {
+      const email = `validation-${randomUUID()}@example.test`;
+      const password = randomUUID();
+      const db = source();
+      await post('signup', { email, password: 'short' }).expect(400);
+      await post('signup', { email: 'invalid', password }).expect(400);
+      expect(await db.query('SELECT id FROM users WHERE email IN ($1, $2)', [email, 'invalid'])).toHaveLength(0);
+
+      const { body: signup } = await post('signup', { email, password }).expect(201);
+      await post('signup', { email: email.toUpperCase(), password }).expect(409);
+      await post('login', { email, password: randomUUID() }).expect(401);
+      // The original device credential is the only one created by these requests.
+      const sessions = await db.query('SELECT id FROM auth_sessions WHERE user_id = $1', [signup.user.id]);
+      expect(sessions).toHaveLength(1);
+      const tokens = await db.query('SELECT digest, encrypted_successor FROM auth_refresh_tokens WHERE session_id = $1', [sessions[0].id]);
+      expect(tokens).toHaveLength(1);
+      const digest = createHash('sha256').update(signup.refreshToken).digest('hex');
+      expect(tokens[0].digest === digest && tokens[0].encrypted_successor === null).toBe(true);
+      await post('logout', { refreshToken: signup.refreshToken }).expect(204);
+      expect(await db.query('SELECT id FROM auth_sessions WHERE id = $1', [sessions[0].id])).toHaveLength(0);
+      expect(await db.query('SELECT digest FROM auth_refresh_tokens WHERE session_id = $1', [sessions[0].id])).toHaveLength(0);
     });
 
     it('recovers a lost rotation response and revokes only the replayed session', async () => {
