@@ -10,9 +10,12 @@ import { checkDatabase } from '../src/database/database-check';
 import { VerifyPostgis1794873600000 } from '../src/database/migrations/1794873600000-VerifyPostgis';
 import { CreateUsers1795018043320 } from '../src/database/migrations/1795018043320-CreateUsers';
 import { CreateAuthSessions1795020000000 } from '../src/database/migrations/1795020000000-CreateAuthSessions';
+import { CreatePlogs1795171000000 } from '../src/database/migrations/1795171000000-CreatePlogs';
+import { AuthSession } from '../src/modules/auth/session.entity';
 import { User } from '../src/modules/users/user.entity';
 import { UsersService } from '../src/modules/users/users.service';
 import request from 'supertest';
+import { plogContract } from './plog.contract';
 
 describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
   let source: DataSource;
@@ -47,10 +50,21 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
       VerifyPostgis1794873600000.name,
       CreateUsers1795018043320.name,
       CreateAuthSessions1795020000000.name,
+      CreatePlogs1795171000000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
     expect(await source.runMigrations()).toHaveLength(0);
 
+    const owner = await source.getRepository(User).save({ email: 'migration@example.test', passwordHash: 'test-hash' });
+    const sessions = source.getRepository(AuthSession);
+    const session = await sessions.save({ user: owner });
+    await source.undoLastMigration();
+    expect(await source.query(`SELECT to_regclass('public.plogs') AS plogs,
+      to_regclass('public.plog_route_points') AS points`)).toEqual([{ plogs: null, points: null }]);
+    expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreatePlogs1795171000000.name]);
+    expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
+    await source.undoLastMigration();
     await source.undoLastMigration();
     expect(await source.query("SELECT to_regclass('public.auth_sessions') AS sessions")).toEqual([{ sessions: null }]);
     expect(await source.query("SELECT to_regclass('public.users') AS users")).toEqual([{ users: 'users' }]);
@@ -61,11 +75,13 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     expect(await source.query("SELECT to_regclass('public.users') AS users")).toEqual([{ users: null }]);
     expect((await checkDatabase(source)).postgis).toContain('POSTGIS=');
     expect(await source.showMigrations()).toBe(true);
-    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([
+      CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name, CreatePlogs1795171000000.name,
+    ]);
     expect(await source.showMigrations()).toBe(false);
   });
 
-  it('has the identity and session tables registered outside PostGIS', async () => {
+  it('matches the registered application schema outside PostGIS', async () => {
     // Extension-owned tables (e.g. spatial_ref_sys) are infrastructure, not domain tables.
     const tables = await source.query(`
       SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -75,11 +91,14 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
             AND d.objid = c.oid AND d.deptype = 'e'
         ) ORDER BY c.relname
     `);
-    expect(tables).toEqual([{ name: 'auth_refresh_tokens' }, { name: 'auth_sessions' }, { name: 'migrations' }, { name: 'users' }]);
+    expect(tables.map(({ name }: { name: string }) => name)).toEqual([
+      'auth_refresh_tokens', 'auth_sessions', 'migrations', 'plog_route_points', 'plogs', 'users',
+    ]);
     expect((await source.driver.createSchemaBuilder().log()).upQueries).toEqual([]);
   });
 
   authContract(() => source);
+  plogContract(() => source);
 
   describe('user identity persistence', () => {
     let module: TestingModule;

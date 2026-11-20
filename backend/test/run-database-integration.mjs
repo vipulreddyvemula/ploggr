@@ -45,7 +45,8 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     const rolledBack = await npm('migration:show:prod', { capture: true });
     assert.match(rolledBack, /\[X\].*VerifyPostgis/);
     assert.match(rolledBack, /\[X\].*CreateUsers/);
-    assert.match(rolledBack, /\[ \].*CreateAuthSessions/);
+    assert.match(rolledBack, /\[X\].*CreateAuthSessions/);
+    assert.match(rolledBack, /\[ \].*CreatePlogs/);
     await npm('migration:run:prod');
     await npm('db:check:prod');
 
@@ -55,6 +56,7 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     assert.match(applied, /\[X\].*VerifyPostgis/);
     assert.match(applied, /\[X\].*CreateUsers/);
     assert.match(applied, /\[X\].*CreateAuthSessions/);
+    assert.match(applied, /\[X\].*CreatePlogs/);
     await npm('db:check:prod');
 
     for (const overrides of [{ DB_PASSWORD: 'incorrect_password' }, { DB_PORT: await unusedPort() }]) {

@@ -120,6 +120,40 @@ and TypeORM omits `password_hash` from ordinary entity reads. Attempts to reuse
 an email fail on `users_email_key` with PostgreSQL code `23505`, even when the
 inserts run concurrently.
 
+## Plog activity persistence
+
+Each row in `plogs` represents one cleanup activity. Its UUID is stable across
+the activity's lifetime. The required `user_id` references `users.id`, so signing
+out or rotating a session leaves the activity attached to its owner. M3.2 will
+use the authenticated user's ID when starting or looking up a Plog. [M3.1 data model](https://github.com/devBuildersunique/ploggr/issues/20) · [M3.2 lifecycle API](https://github.com/devBuildersunique/ploggr/issues/21)
+
+A new Plog defaults to `active` with a start time and zero measurements. A
+partial unique index on the owner allows only one active Plog per user, even
+when two starts arrive together. A completed Plog has an end time at or after
+its start. Both timestamps are timezone-aware. Duration is measured in whole
+seconds and distance in meters, including fractions of a meter.
+
+Each GPS fix is a row in `plog_route_points` with a PostGIS
+`geography(Point, 4326)` value. Coordinates use WGS 84 and the GeoJSON order
+`[longitude, latitude]`. A Plog can start with zero fixes and retain a single
+fix. For a route, read the points in ascending `sequence` order. The primary
+key on `(plog_id, sequence)` prevents two fixes from occupying the same position
+and lets different Plogs use the same sequence numbers. For example, this psql
+query reads the route in recording order for one Plog.
+
+```sql
+\prompt 'Plog UUID: ' plog_id
+SELECT sequence, ST_AsGeoJSON(location)::json AS point
+FROM plog_route_points
+WHERE plog_id = :'plog_id'
+ORDER BY sequence;
+```
+
+Deleting a Plog also deletes its points. Deleting a user deletes that user's
+Plogs. Reverting `CreatePlogs` drops both activity tables and their data.
+Run `npm run test:database` to exercise the migration on an isolated database,
+including rollback and reapplication with an existing M2 user and session.
+
 ## Structure
 
 ```text
