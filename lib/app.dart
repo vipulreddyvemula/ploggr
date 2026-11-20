@@ -13,6 +13,7 @@ import 'package:ploggr/features/litter/application/litter_controller.dart';
 import 'package:ploggr/features/plogging/application/session_controller.dart'
     show sessionProvider, impactProvider;
 import 'package:ploggr/features/profile/profile_controller.dart';
+import 'package:ploggr/features/plogging/application/active_track.dart';
 
 class PloggrApp extends ConsumerStatefulWidget {
   const PloggrApp({super.key});
@@ -36,6 +37,7 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
               next.phase == SessionPhase.signedOut ||
               (id != null && id != _accountId))) {
         // Dispose per-account preview state, including any running plog timer.
+        ref.invalidate(activeTrackProvider);
         ref.invalidate(sessionProvider);
         ref.invalidate(impactProvider);
         ref.invalidate(profileProvider);

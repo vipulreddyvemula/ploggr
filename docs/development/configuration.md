@@ -141,3 +141,9 @@ The live Riverpod controller keeps a Plog ID, start time, elapsed time, ordered
 fixes and cumulative distance in meters. A failed GPS stream retains the track
 and offers a retry. Finishing freezes the measurements and stops the timer and
 GPS subscription, including when the Android permission prompt is still open.
+
+In a signed-in Android session, select **Start Plog Session** on Home. The app
+checks for an active Plog before creating one. GPS starts after the server
+confirms the activity. Return to Home and use **Resume Plog Session** to see
+live time, distance and fix count. **Finish Plog** stops GPS and submits those
+measurements using the same authenticated API client as Settings.

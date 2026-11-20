@@ -1,51 +1,22 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
+import '../../../core/network/protected_api.dart';
+import '../data/plog_api.dart';
+import '../data/plog_track.dart';
 import '../data/location_source.dart';
 
-class PlogTrack {
-  const PlogTrack(
-    this.id,
-    this.startedAt, {
-    this.route = const [],
-    this.distanceMeters = 0,
-    this.endedAt,
-  });
-  final String id;
-  final DateTime startedAt;
-  final DateTime? endedAt;
-  final List<RouteFix> route;
-  final double distanceMeters;
-
-  PlogTrack append(RouteFix point) {
-    final previous = route.lastOrNull;
-    if (previous == point) return this;
-    final segment = previous == null
-        ? 0.0
-        : Geolocator.distanceBetween(
-            previous.latitude,
-            previous.longitude,
-            point.latitude,
-            point.longitude,
-          );
-    return PlogTrack(
-      id,
-      startedAt,
-      route: List.unmodifiable([...route, point]),
-      distanceMeters: distanceMeters + segment,
-    );
-  }
-
-  PlogTrack finish(DateTime end) => PlogTrack(
-    id,
-    startedAt,
-    endedAt: end,
-    route: route,
-    distanceMeters: distanceMeters,
-  );
+enum TrackPhase {
+  idle,
+  starting,
+  startError,
+  locating,
+  tracking,
+  gpsError,
+  stopped,
+  saving,
+  saveError,
+  completed,
 }
-
-enum TrackPhase { idle, locating, tracking, gpsError, stopped }
 
 class TrackView {
   const TrackView(
@@ -86,8 +57,73 @@ class ActiveTrackController extends Notifier<TrackView> {
     _positions = null;
   }
 
+  Future<void> startOrResume() async {
+    if (![
+      TrackPhase.idle,
+      TrackPhase.startError,
+      TrackPhase.completed,
+    ].contains(state.phase)) {
+      return;
+    }
+    final generation = ++_generation;
+    state = const TrackView(TrackPhase.starting);
+    try {
+      final api = ref.read(plogApiProvider);
+      var track = await api.active();
+      if (generation != _generation) return;
+      if (track == null) {
+        try {
+          track = await api.start();
+        } on ProtectedApiFailure catch (error) {
+          if (error.status != 409 || generation != _generation) rethrow;
+          track = await api.active();
+          if (track == null) rethrow;
+        }
+      }
+      if (generation != _generation) return;
+      await begin(track);
+    } catch (_) {
+      if (generation == _generation) {
+        state = const TrackView(
+          TrackPhase.startError,
+          error:
+              'Could not start or resume your Plog. Check your connection and retry.',
+        );
+      }
+    }
+  }
+
+  Future<void> submit() async {
+    if (state.phase == TrackPhase.saving ||
+        state.phase == TrackPhase.completed) {
+      return;
+    }
+    final track = freeze();
+    if (track == null) return;
+    final generation = _generation;
+    final elapsed = track.endedAt!.difference(track.startedAt);
+    state = TrackView(TrackPhase.saving, track: track, elapsed: elapsed);
+    try {
+      await ref.read(plogApiProvider).finish(track);
+      if (generation == _generation) {
+        state = TrackView(TrackPhase.completed, track: track, elapsed: elapsed);
+      }
+    } catch (_) {
+      if (generation == _generation) {
+        state = TrackView(
+          TrackPhase.saveError,
+          track: track,
+          elapsed: elapsed,
+          error: 'Could not confirm the save. Retry to send the same activity.',
+        );
+      }
+    }
+  }
+
   Future<void> begin(PlogTrack track) async {
-    if (state.phase != TrackPhase.idle) return;
+    if (state.phase != TrackPhase.idle && state.phase != TrackPhase.starting) {
+      return;
+    }
     final age = DateTime.now().toUtc().difference(track.startedAt);
     _initial = age.isNegative ? Duration.zero : age;
     _clock

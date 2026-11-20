@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../routes/app_routes.dart';
+import '../../routes/auth_navigation.dart';
+import '../plogging/application/active_track.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/bottom_navigation.dart';
@@ -13,6 +15,17 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final impact = ref.watch(impactProvider);
     final session = ref.watch(sessionProvider);
+    final live = ref.watch(authModeProvider) == AuthMode.live;
+    final livePhase = live
+        ? ref.watch(activeTrackProvider.select((s) => s.phase))
+        : TrackPhase.idle;
+    final resume = live
+        ? ![
+            TrackPhase.idle,
+            TrackPhase.completed,
+            TrackPhase.startError,
+          ].contains(livePhase)
+        : session.active;
     final name = ref.watch(profileProvider).split(' ').first;
     return Scaffold(
       bottomNavigationBar: const BottomNavBar(),
@@ -110,10 +123,12 @@ class HomePage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 15),
                 PrimaryButton(
-                  session.active ? 'Resume Plog Session' : 'Start Plog Session',
+                  resume ? 'Resume Plog Session' : 'Start Plog Session',
                   icon: Icons.directions_run_rounded,
                   onPressed: () {
-                    if (!session.active) {
+                    if (live) {
+                      ref.read(activeTrackProvider.notifier).startOrResume();
+                    } else if (!session.active) {
                       ref.read(sessionProvider.notifier).start();
                     }
                     openPage(context, AppRoutes.session);

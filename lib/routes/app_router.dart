@@ -10,6 +10,7 @@ import '../features/auth/signup_page.dart';
 import '../features/home/end_session.dart';
 import '../features/home/home_page.dart';
 import '../features/home/in_session.dart';
+import '../features/plogging/live_plog_page.dart';
 import '../features/leaderboard/leaderboard_page.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/onboarding/onboarding_page.dart';
@@ -80,11 +81,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: AppRoutes.map, builder: (_, _) => const LitterMapPage()),
       GoRoute(
         path: AppRoutes.session,
-        builder: (_, _) => const InSessionPage(),
+        builder: (_, _) => mode == AuthMode.live
+            ? const LivePlogPage()
+            : const InSessionPage(),
       ),
       GoRoute(
         path: AppRoutes.sessionSummary,
-        builder: (_, _) => const EndSessionPage(),
+        builder: (_, _) => mode == AuthMode.live
+            ? const LivePlogPage()
+            : const EndSessionPage(),
       ),
       GoRoute(
         path: AppRoutes.cleanups,
