@@ -128,3 +128,11 @@ USB forwarding after the probe exits, or use the emulator host address below.
 ```bash
 flutter test -d emulator-5554 integration_test/auth_flow_test.dart --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/
 ```
+
+## Android Plog location
+
+Starting an authenticated Plog requests location while using the app. Enable
+device location and grant precise access for walking routes. If Android stops
+offering the prompt, open the app's system permissions to allow Location, then
+retry GPS. The tracker requests foreground fixes with a three-meter movement
+filter and releases its subscription when tracking ends.
