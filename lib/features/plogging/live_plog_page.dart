@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../shared/widgets/ploggr_ui.dart';
+import '../../routes/app_routes.dart';
 import 'application/active_track.dart';
 
 class LivePlogPage extends ConsumerWidget {
@@ -58,6 +59,11 @@ class LivePlogPage extends ConsumerWidget {
             TrackPhase.gpsError,
           ].contains(phase))
             PrimaryButton('Finish Plog', onPressed: controller.submit),
+          if (phase == TrackPhase.completed)
+            PrimaryButton(
+              'View activity',
+              onPressed: () => openPage(context, AppRoutes.activity),
+            ),
           if (phase == TrackPhase.saving) const Text('Saving your Plog…'),
           if (phase == TrackPhase.conflict)
             TextButton(

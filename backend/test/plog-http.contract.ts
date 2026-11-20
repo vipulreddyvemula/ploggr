@@ -21,6 +21,7 @@ export function plogHttpContract() {
         .send({ email: randomUUID() + '@example.test', password: randomUUID() }).expect(201)).body;
       const owner = await signup();
       const other = await signup();
+      await http.get('/api/plogs').expect(401);
       await http.post('/api/plogs').expect(401);
       await http.get('/api/plogs/active').expect(401);
       const { body: active } = await http.post('/api/plogs').set('Authorization', 'Bearer ' + owner.accessToken).expect(201);
@@ -30,7 +31,9 @@ export function plogHttpContract() {
       await http.get('/api/plogs/active').set(auth).expect(200, { plog: active });
       await http.get('/api/plogs/active').set(foreign).expect(200, { plog: null });
       await http.post('/api/plogs').set(auth).expect(409);
-      const url = '/api/plogs/' + active.id + '/finish';
+      const detail = '/api/plogs/' + active.id;
+      await http.get(detail).set(auth).expect(404);
+      const url = detail + '/finish';
       const data = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0,
         route: [{ latitude: 17.01, longitude: 78.12 }] };
       await http.post(url).send(data).expect(401);
@@ -39,6 +42,13 @@ export function plogHttpContract() {
       await http.post(url).set(auth).send({ ...data, endedAt: '2000-01-01T00:00:00Z' }).expect(400);
       const completed = await http.post(url).set(auth).send(data).expect(200);
       expect(completed.body).toMatchObject({ id: active.id, status: 'completed', endedAt: data.endedAt });
+      await http.get(detail).expect(401);
+      await http.get(detail).set(foreign).expect(404);
+      await http.get(detail).set(auth).expect(200, { ...completed.body, route: data.route });
+      await http.get('/api/plogs').set(auth).expect(200, { items: [completed.body], nextCursor: null });
+      await http.get('/api/plogs').set(foreign).expect(200, { items: [], nextCursor: null });
+      await http.get('/api/plogs?before=' + active.id).set(auth).expect(200, { items: [], nextCursor: null });
+      await http.get('/api/plogs?before=invalid').set(auth).expect(400);
       await http.post(url).set(auth).send(data).expect(200, completed.body);
       await http.post(url).set(auth).send({ ...data, route: [] }).expect(409);
       await http.get('/api/plogs/active').set(auth).expect(200, { plog: null });

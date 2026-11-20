@@ -357,3 +357,10 @@ with numeric latitude and longitude. An empty route is valid. The server locks
 the owned activity and commits the measurements and fixes in one transaction.
 An identical retry returns the saved result (200), a different completion
 returns 409, and an unknown or foreign activity returns 404.
+
+`GET /api/plogs` returns up to 25 completed summaries for the authenticated
+owner, ordered by end time and then UUID descending. Supply the returned
+`nextCursor` as the `before` query parameter for the next page.
+`GET /api/plogs/:id` returns an owned completed summary and its ordered route
+of latitude/longitude objects. An active, foreign or missing ID returns 404.
+On Android, open **View activity** after saving or **My Activity** in Profile.

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { FinishPlogDto } from './plog.dto';
 import { PlogsService } from './plogs.service';
@@ -15,6 +15,18 @@ export class PlogsController {
   @Get('active')
   @Header('Cache-Control', 'no-store')
   active(@Req() req: AuthenticatedRequest) { return this.plogs.active(req.user.id); }
+
+  @Get()
+  @Header('Cache-Control', 'no-store')
+  completed(@Req() req: AuthenticatedRequest, @Query('before', new ParseUUIDPipe({ optional: true })) before?: string) {
+    return this.plogs.completed(req.user.id, before);
+  }
+
+  @Get(':id')
+  @Header('Cache-Control', 'no-store')
+  detail(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.plogs.detail(req.user.id, id);
+  }
 
   @Post(':id/finish')
   @HttpCode(200)

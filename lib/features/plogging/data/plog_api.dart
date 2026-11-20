@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/protected_api.dart';
 import '../../auth/session/session_controller.dart';
 import 'plog_track.dart';
+import 'completed_plog.dart';
 
 class PlogApi {
   const PlogApi(this.client, this.owner);
@@ -30,6 +31,33 @@ class PlogApi {
 
   Future<PlogTrack> start() async =>
       _activeTrack(await client.request<Object?>('POST', 'plogs'));
+
+  Future<ActivityPageData> completed(String? before) async {
+    final page = await client.request<Object?>(
+      'GET',
+      'plogs',
+      queryParameters: before == null ? null : {'before': before},
+    );
+    if (page case {'items': List items, 'nextCursor': String? cursor}) {
+      return (
+        items: items.map((item) => CompletedPlog.parse(item, owner)).toList(),
+        nextCursor: cursor,
+      );
+    }
+    throw const FormatException('Invalid activity list');
+  }
+
+  Future<CompletedPlog> detail(String id) async {
+    final result = CompletedPlog.parse(
+      await client.request<Object?>('GET', 'plogs/$id'),
+      owner,
+      detail: true,
+    );
+    if (result.id != id) {
+      throw const FormatException('Unexpected Plog identifier');
+    }
+    return result;
+  }
 
   Future<void> finish(PlogTrack track) async {
     final end = track.endedAt!;

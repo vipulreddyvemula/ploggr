@@ -30,6 +30,25 @@ export class PlogsService {
     return { plog: plog && summary(plog, userId) };
   }
 
+  async completed(userId: string, before?: string) {
+    const query = this.source.getRepository(Plog).createQueryBuilder('p')
+      .where('p.user_id = :userId AND p.status = :status', { userId, status: 'completed' });
+    if (before) {
+      query.andWhere(`(p.ended_at, p.id) < (
+        SELECT ended_at, id FROM plogs WHERE id = :before AND user_id = :userId AND status = :status
+      )`, { before });
+    }
+    const records = await query.orderBy('p.ended_at', 'DESC').addOrderBy('p.id', 'DESC').take(26).getMany();
+    const items = records.slice(0, 25).map(p => summary(p, userId));
+    return { items, nextCursor: records.length > items.length ? items[items.length - 1].id : null };
+  }
+
+  async detail(userId: string, id: string) {
+    const record = await this.source.getRepository(Plog).findOneBy({ user: { id: userId }, id, status: 'completed' });
+    if (!record) throw new NotFoundException();
+    return { ...summary(record, userId), route: await this.readRoute(this.source.manager, id) };
+  }
+
   private readRoute(manager: EntityManager, id: string): Promise<FinishPlogDto['route']> {
     return manager.query(`
       SELECT ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
