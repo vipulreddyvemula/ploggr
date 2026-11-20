@@ -155,3 +155,7 @@ sending them. If the connection drops or the app restarts, use Start or Resume
 on Home and **Retry save**. The same payload is sent until the server confirms
 completion. A conflicting completion on another device leaves the local draft
 available until you explicitly discard it.
+
+On Android, use the system Camera or Photos picker to select collected-garbage
+evidence for the current Plog. The local draft can retain up to six JPEG or
+PNG images, each up to 8 MiB. Selection uses Android's per-image access grant.

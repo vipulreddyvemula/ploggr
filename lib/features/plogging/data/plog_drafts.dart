@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/config/app_config_provider.dart';
@@ -13,7 +15,10 @@ class PlogDrafts {
 
   Future<Database> _database() async => openDatabase(
     '${await getDatabasesPath()}/ploggr-tracks/drafts.db',
-    version: 1,
+    version: 2,
+    onUpgrade: (db, from, to) async {
+      if (from < 2) await _addPhotos(db);
+    },
     onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
     onCreate: (db, _) async {
       await db.execute('''CREATE TABLE drafts (
@@ -23,8 +28,110 @@ class PlogDrafts {
         scope TEXT NOT NULL REFERENCES drafts(scope) ON DELETE CASCADE,
         sequence INTEGER NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL,
         PRIMARY KEY(scope, sequence))''');
+      await _addPhotos(db);
     },
   );
+
+  static Future<void> _addPhotos(Database db) async {
+    await db.execute(
+      'ALTER TABLE drafts ADD COLUMN photo_locked INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.execute('''CREATE TABLE photos (
+      id TEXT PRIMARY KEY, scope TEXT NOT NULL REFERENCES drafts(scope) ON DELETE CASCADE,
+      plog_id TEXT NOT NULL, media_type TEXT, bytes BLOB)''');
+  }
+
+  Future<List<String>> photoIds(String plogId) => _ordered(
+    (db) async => (await db.query(
+      'photos',
+      columns: ['id'],
+      where: 'scope=? AND plog_id=? AND bytes IS NOT NULL',
+      whereArgs: [scope, plogId],
+      orderBy: 'rowid',
+    )).map((row) => row['id'] as String).toList(),
+  );
+
+  Future<String?> pendingPhoto(String plogId) => _ordered(
+    (db) async =>
+        (await db.query(
+              'photos',
+              columns: ['id'],
+              where: 'scope=? AND plog_id=? AND bytes IS NULL',
+              whereArgs: [scope, plogId],
+              limit: 1,
+            )).firstOrNull?['id']
+            as String?,
+  );
+
+  Future<String> reservePhoto(String plogId) => _ordered(
+    (db) => db.transaction((tx) async {
+      final editable = await tx.query(
+        'drafts',
+        columns: ['id'],
+        where: 'scope=? AND id=? AND photo_locked=0',
+        whereArgs: [scope, plogId],
+      );
+      if (editable.isEmpty) throw StateError('Photo selection is closed.');
+      final rows = await tx.rawQuery(
+        'SELECT count(*) AS n, count(bytes) AS ready FROM photos WHERE scope=? AND plog_id=?',
+        [scope, plogId],
+      );
+      final count = rows.single['n'] as int;
+      if (count >= 6 || count != rows.single['ready']) {
+        throw StateError('Finish the current selection or remove a photo.');
+      }
+      final id = const Uuid().v4();
+      await tx.insert('photos', {'id': id, 'scope': scope, 'plog_id': plogId});
+      return id;
+    }),
+  );
+
+  Future<void> storePhoto(
+    String plogId,
+    String id,
+    String type,
+    Uint8List bytes,
+  ) => _ordered((db) async {
+    final count = await db.update(
+      'photos',
+      {'bytes': bytes, 'media_type': type},
+      where: 'scope=? AND plog_id=? AND id=? AND bytes IS NULL',
+      whereArgs: [scope, plogId, id],
+    );
+    if (count != 1) throw StateError('The Plog draft has changed.');
+  });
+
+  Future<void> removePhoto(String plogId, String id) => _ordered((db) async {
+    await db.delete(
+      'photos',
+      where:
+          'scope=? AND plog_id=? AND id=? AND scope IN (SELECT scope FROM drafts WHERE photo_locked=0)',
+      whereArgs: [scope, plogId, id],
+    );
+  });
+
+  Future<({String type, Uint8List bytes})> readPhoto(
+    String plogId,
+    String id,
+  ) => _ordered((db) async {
+    final args = [scope, plogId, id];
+    final rows = await db.rawQuery(
+      'SELECT media_type, length(bytes) AS size FROM photos WHERE scope=? AND plog_id=? AND id=?',
+      args,
+    );
+    final row = rows.single;
+    final size = row['size'] as int;
+    final data = BytesBuilder(copy: false);
+    // Keep each result below Android's SQLite CursorWindow size.
+    while (data.length < size) {
+      final part = await db.rawQuery(
+        'SELECT substr(bytes, ?, 524288) AS part FROM photos WHERE scope=? AND plog_id=? AND id=?',
+        [data.length + 1, ...args],
+      );
+      data.add(part.single['part'] as Uint8List);
+    }
+    return (type: row['media_type'] as String, bytes: data.takeBytes());
+  });
 
   Future<T> _ordered<T>(Future<T> Function(Database) operation) {
     final result = _queue.then((_) async => operation(await _database()));

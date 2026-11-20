@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../routes/app_routes.dart';
 import 'application/active_track.dart';
+import 'garbage_photos.dart';
 
 class LivePlogPage extends ConsumerWidget {
   const LivePlogPage({super.key});
@@ -59,6 +60,8 @@ class LivePlogPage extends ConsumerWidget {
             TrackPhase.gpsError,
           ].contains(phase))
             PrimaryButton('Finish Plog', onPressed: controller.submit),
+          if (track != null && phase == TrackPhase.tracking)
+            GarbagePhotos(track.id, key: ValueKey(track.id)),
           if (phase == TrackPhase.completed)
             PrimaryButton(
               'View activity',
