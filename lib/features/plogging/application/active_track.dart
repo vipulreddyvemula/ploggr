@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/protected_api.dart';
 import '../data/plog_api.dart';
+import '../data/plog_drafts.dart';
 import '../data/plog_track.dart';
 import '../data/location_source.dart';
 
@@ -15,6 +16,7 @@ enum TrackPhase {
   stopped,
   saving,
   saveError,
+  conflict,
   completed,
 }
 
@@ -69,7 +71,29 @@ class ActiveTrackController extends Notifier<TrackView> {
     state = const TrackView(TrackPhase.starting);
     try {
       final api = ref.read(plogApiProvider);
+      final drafts = ref.read(plogDraftsProvider);
+      final draft = await drafts.load();
+      if (generation != _generation) return;
+      if (draft != null && draft.endedAt != null) {
+        state = TrackView(
+          TrackPhase.saveError,
+          track: draft,
+          elapsed: draft.endedAt!.difference(draft.startedAt),
+          error: 'Recovered your finished Plog. Retry to confirm the save.',
+        );
+        return;
+      }
       var track = await api.active();
+      if (generation != _generation) return;
+      if (draft != null && draft.id != track?.id) {
+        state = TrackView(
+          TrackPhase.conflict,
+          track: draft,
+          error:
+              'This Plog is no longer active on the server. Its local route is still on this device.',
+        );
+        return;
+      }
       if (generation != _generation) return;
       if (track == null) {
         try {
@@ -81,7 +105,7 @@ class ActiveTrackController extends Notifier<TrackView> {
         }
       }
       if (generation != _generation) return;
-      await begin(track);
+      await begin(draft ?? track);
     } catch (_) {
       if (generation == _generation) {
         state = const TrackView(
@@ -104,17 +128,45 @@ class ActiveTrackController extends Notifier<TrackView> {
     final elapsed = track.endedAt!.difference(track.startedAt);
     state = TrackView(TrackPhase.saving, track: track, elapsed: elapsed);
     try {
-      await ref.read(plogApiProvider).finish(track);
+      final api = ref.read(plogApiProvider);
+      final drafts = ref.read(plogDraftsProvider);
+      await drafts.save(track);
+      if (generation != _generation) return;
+      await api.finish(track);
+      await drafts.remove(track.id);
       if (generation == _generation) {
         state = TrackView(TrackPhase.completed, track: track, elapsed: elapsed);
       }
+    } catch (error) {
+      if (generation == _generation) {
+        final conflict =
+            error is ProtectedApiFailure &&
+            (error.status == 404 || error.status == 409);
+        state = TrackView(
+          conflict ? TrackPhase.conflict : TrackPhase.saveError,
+          track: track,
+          elapsed: elapsed,
+          error: conflict
+              ? 'The server has a different result for this Plog. Your local route is still on this device.'
+              : 'Could not confirm the save. Retry to send the same activity.',
+        );
+      }
+    }
+  }
+
+  Future<void> discardConflict() async {
+    if (state.phase != TrackPhase.conflict) return;
+    final generation = _generation;
+    final track = state.track!;
+    try {
+      await ref.read(plogDraftsProvider).remove(track.id);
+      if (generation == _generation) clear();
     } catch (_) {
       if (generation == _generation) {
         state = TrackView(
-          TrackPhase.saveError,
+          TrackPhase.conflict,
           track: track,
-          elapsed: elapsed,
-          error: 'Could not confirm the save. Retry to send the same activity.',
+          error: 'Could not remove the local draft.',
         );
       }
     }
@@ -148,6 +200,7 @@ class ActiveTrackController extends Notifier<TrackView> {
   Future<void> _listen() async {
     final generation = ++_generation;
     final source = ref.read(locationSourceProvider);
+    final drafts = ref.read(plogDraftsProvider);
     state = TrackView(
       TrackPhase.locating,
       track: state.track,
@@ -160,6 +213,8 @@ class ActiveTrackController extends Notifier<TrackView> {
       _positions = null;
       final message = error is LocationFailure
           ? error.message
+          : error is String
+          ? error
           : LocationFailure.unavailable.message;
       state = TrackView(
         TrackPhase.gpsError,
@@ -170,6 +225,15 @@ class ActiveTrackController extends Notifier<TrackView> {
     }
 
     try {
+      try {
+        await drafts.save(state.track!);
+      } catch (_) {
+        failed(
+          'Device storage could not save this Plog. Free space and retry.',
+        );
+        return;
+      }
+      if (generation != _generation) return;
       await source.requestAccess();
       if (generation != _generation) return;
       state = TrackView(
@@ -185,9 +249,18 @@ class ActiveTrackController extends Notifier<TrackView> {
             failed('Route limit reached. Finish this Plog to save your fixes.');
             return;
           }
+          final updated = track.append(point);
+          if (identical(track, updated)) return;
+          unawaited(
+            drafts.save(updated).catchError((Object _) {
+              failed(
+                'Device storage could not save this fix. Free space and retry.',
+              );
+            }),
+          );
           state = TrackView(
             TrackPhase.tracking,
-            track: track.append(point),
+            track: updated,
             elapsed: _elapsed,
           );
         },

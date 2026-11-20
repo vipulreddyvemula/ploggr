@@ -5,6 +5,7 @@ import 'package:ploggr/features/plogging/application/active_track.dart';
 import 'package:ploggr/features/plogging/data/location_source.dart';
 import 'package:ploggr/features/plogging/data/plog_track.dart';
 import 'package:ploggr/features/plogging/data/plog_api.dart';
+import 'package:ploggr/features/plogging/data/plog_drafts.dart';
 
 class FakeGps extends Fake implements LocationSource {
   final stream = StreamController<RouteFix>.broadcast(sync: true);
@@ -17,6 +18,7 @@ class FakeGps extends Fake implements LocationSource {
 
 class FakePlogApi extends Fake implements PlogApi {
   final created = Completer<PlogTrack>();
+  bool offline = false;
   int starts = 0;
   int finishes = 0;
   PlogTrack? submitted;
@@ -32,22 +34,41 @@ class FakePlogApi extends Fake implements PlogApi {
   Future<void> finish(PlogTrack track) async {
     finishes++;
     submitted = track;
+    if (offline) throw StateError('offline');
+  }
+}
+
+class MemoryDrafts extends Fake implements PlogDrafts {
+  PlogTrack? record;
+  @override
+  Future<PlogTrack?> load() async => record;
+  @override
+  Future<void> save(PlogTrack track) async {
+    record = track;
+  }
+
+  @override
+  Future<void> remove(String id) async {
+    if (record?.id == id) record = null;
   }
 }
 
 void main() {
+  late MemoryDrafts drafts;
   late FakeGps gps;
   late FakePlogApi api;
   late ProviderContainer container;
   late ActiveTrackController controller;
   TrackView current() => container.read(activeTrackProvider);
   setUp(() {
+    drafts = MemoryDrafts();
     gps = FakeGps();
     api = FakePlogApi();
     container = ProviderContainer(
       overrides: [
         locationSourceProvider.overrideWithValue(gps),
         plogApiProvider.overrideWithValue(api),
+        plogDraftsProvider.overrideWithValue(drafts),
       ],
     );
     controller = container.read(activeTrackProvider.notifier);
@@ -79,6 +100,7 @@ void main() {
     final pending = Completer<void>();
     gps.permission = () => pending.future;
     final starting = controller.begin(PlogTrack('one', DateTime.now()));
+    await Future<void>.delayed(Duration.zero);
     controller.freeze();
     pending.complete();
     await starting;
@@ -117,6 +139,28 @@ void main() {
       expect(api.submitted!.route.length, 1);
       expect(gps.stream.hasListener, isFalse);
       expect(current().phase, TrackPhase.completed);
+    },
+  );
+  test(
+    'recovers an offline completion after controller disposal with identical values',
+    () async {
+      api.offline = true;
+      await controller.begin(PlogTrack('existing', DateTime.now().toUtc()));
+      gps.stream.add((latitude: 10, longitude: 20));
+      await controller.submit();
+      expect(current().phase, TrackPhase.saveError);
+      final frozen = drafts.record!;
+      expect(frozen.endedAt, isNotNull);
+      container.invalidate(activeTrackProvider);
+      controller = container.read(activeTrackProvider.notifier);
+      await controller.startOrResume();
+      expect(current().phase, TrackPhase.saveError);
+      expect(gps.stream.hasListener, isFalse);
+      api.offline = false;
+      await controller.submit();
+      expect(api.submitted, same(frozen));
+      expect(drafts.record, isNull);
+      expect(api.starts, 0);
     },
   );
 }

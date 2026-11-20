@@ -59,6 +59,34 @@ class LivePlogPage extends ConsumerWidget {
           ].contains(phase))
             PrimaryButton('Finish Plog', onPressed: controller.submit),
           if (phase == TrackPhase.saving) const Text('Saving your Plog…'),
+          if (phase == TrackPhase.conflict)
+            TextButton(
+              onPressed: () async {
+                final discard = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Discard local route?'),
+                    content: const Text(
+                      'This removes the route from this device.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Keep route'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Discard'),
+                      ),
+                    ],
+                  ),
+                );
+                if (discard == true && context.mounted) {
+                  await controller.discardConflict();
+                }
+              },
+              child: const Text('Discard local draft'),
+            ),
           if (phase == TrackPhase.saveError)
             PrimaryButton('Retry save', onPressed: controller.submit),
         ],

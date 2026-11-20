@@ -147,3 +147,11 @@ checks for an active Plog before creating one. GPS starts after the server
 confirms the activity. Return to Home and use **Resume Plog Session** to see
 live time, distance and fix count. **Finish Plog** stops GPS and submits those
 measurements using the same authenticated API client as Settings.
+
+Android checkpoints each new fix in an app-private SQLite transaction. Drafts
+are scoped to the API URL and account, and excluded from Android backup and
+device transfer. Finish writes the final time and measurements locally before
+sending them. If the connection drops or the app restarts, use Start or Resume
+on Home and **Retry save**. The same payload is sent until the server confirms
+completion. A conflicting completion on another device leaves the local draft
+available until you explicitly discard it.
