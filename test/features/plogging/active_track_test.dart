@@ -20,6 +20,8 @@ class FakeGps extends Fake implements LocationSource {
 class FakePlogApi extends Fake implements PlogApi {
   final created = Completer<PlogTrack>();
   bool offline = false;
+  String? failedPhoto;
+  final uploads = <String>[];
   int starts = 0;
   int finishes = 0;
   PlogTrack? submitted;
@@ -37,7 +39,11 @@ class FakePlogApi extends Fake implements PlogApi {
     String photoId,
     String type,
     Uint8List bytes,
-  ) async {}
+  ) async {
+    uploads.add(photoId);
+    if (photoId == failedPhoto) throw StateError('storage unavailable');
+  }
+
   @override
   Future<void> finish(PlogTrack track) async {
     finishes++;
@@ -49,12 +55,14 @@ class FakePlogApi extends Fake implements PlogApi {
 class MemoryDrafts extends Fake implements PlogDrafts {
   PlogTrack? record;
   bool locked = false;
+  final photos = ['photo'];
   @override
   Future<bool> photosLocked(String id) async => locked;
   @override
   Future<List<String>> lockPhotos(String id) async {
+    if (photos.isEmpty) throw StateError('no photos');
     locked = true;
-    return ['photo'];
+    return photos;
   }
 
   @override
@@ -163,6 +171,31 @@ void main() {
       expect(current().phase, TrackPhase.completed);
     },
   );
+  test(
+    'can edit an incomplete selection and retry a partial upload with the same IDs',
+    () async {
+      await controller.begin(PlogTrack('existing', DateTime.now().toUtc()));
+      await controller.selectEvidence();
+      drafts.photos.clear();
+      await controller.submit();
+      expect(current().phase, TrackPhase.stopped);
+      expect(api.uploads, isEmpty);
+      final frozen = current().track;
+      drafts.photos.addAll(['first', 'second']);
+      api.failedPhoto = 'second';
+      await controller.submit();
+      expect(current().phase, TrackPhase.saveError);
+      expect(api.finishes, 0);
+      expect(drafts.locked, isTrue);
+      api.failedPhoto = null;
+      await controller.submit();
+      expect(api.uploads, ['first', 'second', 'first', 'second']);
+      expect(api.finishes, 1);
+      expect(api.submitted, same(frozen));
+      expect(current().phase, TrackPhase.completed);
+    },
+  );
+
   test(
     'recovers an offline completion after controller disposal with identical values',
     () async {

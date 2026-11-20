@@ -7,9 +7,10 @@ Ploggr is a Flutter app for people who pick up litter while walking or jogging. 
 The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. On Android with a configured API, Login and Sign Up establish a live session. Profile → Settings shows the authenticated email and offers Log out. Desktop development and unconfigured debug builds retain the sample preview. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
 
 Signed-in Android users can start a Plog from Home, record a GPS route, and
-finish the activity. **Profile → My Activity** shows saved routes, distances
-and times. Android keeps a recoverable draft during tracking and while waiting
-for the server to confirm a save. [Android tracking](docs/development/configuration.md#android-plog-location) · [Plog API](backend/docs/maintenance.md#plog-lifecycle-api)
+finish tracking, then take or choose **1–6 garbage photos**. **Save Plog**
+uploads the selected photos and confirms completion. **Profile → My Activity**
+shows the route, measurements and private photos. An interrupted save can
+resume from the Android draft after an app restart. [Android tracking](docs/development/configuration.md#android-plog-location) · [Plog API](backend/docs/maintenance.md#plog-lifecycle-api)
 
 ## Get a checkout
 
@@ -34,9 +35,9 @@ The verified development path uses Linux x86-64, GNU Make, Flutter 3.50.0 (Dart 
 Run these commands from the **repository root**.
 
 1. Run `make setup` to install the dependencies recorded in both lockfiles and copy the example configuration. It preserves existing local files. Before the first database startup, choose separate application and administrator passwords in `backend/.env`.
-2. In the first terminal, run `make api`. It starts PostgreSQL, waits for readiness, applies pending migrations, then runs Nest in watch mode. Keep it running after `API listening at http://127.0.0.1:3000/api`.
+2. In the first terminal, run `make api`. It starts PostgreSQL and private image storage, waits for readiness, applies pending migrations, then runs Nest in watch mode. Keep it running after `API listening at http://127.0.0.1:3000/api`.
 3. In a second terminal, run `make app`. Choose **Skip → Explore the preview → Profile → Settings → Connection check → Check connection**. **Connected** confirms the full path.
-4. Quit Flutter with `q`, stop Nest with Ctrl+C, then run `make down`. Your development database volume persists.
+4. Quit Flutter with `q`, stop Nest with Ctrl+C, then run `make down`. Your database and image volumes persist.
 
 To check just the API and database with the default port, run the following in another terminal.
 
@@ -50,7 +51,7 @@ Liveness returns `{"status":"ok"}`. Readiness returns `{"status":"ok","database"
 - **Android.** Install the Android SDK and select a device from `flutter devices`. Set the device-appropriate URL in `config/development.local.json`, then run `make app DEVICE=emulator-5554`, substituting your ID. [Device addresses](docs/development/configuration.md#device-addresses) · [USB setup and troubleshooting](docs/development/connection-check.md)
 - **Flutter-only preview.** Run `flutter pub get --enforce-lockfile` and `flutter run` without defines. You can navigate the preview offline. The connection screen displays **No server configured**.
 - **Backend-only development.** Run the npm and Compose commands directly from `backend/`. [Backend setup](backend/README.md#first-time-setup)
-- **Parallel checkouts.** Set a unique `COMPOSE_PROJECT_NAME`, `DB_PORT`, and `PORT` in the new checkout's `backend/.env`, then update its Flutter URL. This gives each checkout its own database and volume. [Configuration reference](docs/development/configuration.md)
+- **Parallel checkouts.** Set a unique `COMPOSE_PROJECT_NAME`, `DB_PORT`, `EVIDENCE_S3_PORT`, and `PORT` in the new checkout's `backend/.env`, set `EVIDENCE_S3_ENDPOINT` to the matching loopback storage port, then update the Flutter URL. Each checkout has its own database and image volumes. [Configuration reference](docs/development/configuration.md)
 
 ## How the project fits together
 
@@ -79,6 +80,7 @@ Flutter screen → Riverpod controller → Dio → GET /api/health/ready
 | `make validate` | Install locked dependencies, build both applications, verify migrations and PostGIS, and drive a real Linux app through database and API outages and recovery. Uses a disposable Compose project and random ports. |
 | `make validate-auth DEVICE=emulator-5554` | Verify signup, login, identity, session persistence, and logout on an empty Android emulator against an isolated API and database. [M2 acceptance report](docs/development/authentication-validation.md) |
 | `make validate-plog DEVICE=emulator-5554` | Exercise location permission, GPS fixes, offline finish, process restart and activity retrieval on a disposable Android emulator. [M3 verification](docs/development/plog-validation.md) |
+| `make validate-evidence DEVICE=emulator-5554` | Exercise Android camera and gallery, interrupted upload, retry, private storage restart and photo retrieval. [M4 verification](docs/development/evidence-validation.md) |
 | `flutter build apk --debug` | Build an Android debug APK with the Android toolchain. |
 
 Full validation requires Docker and a Linux display. Use `xvfb-run -a make validate` on headless Linux with Xvfb and xauth installed. CI runs the same Node runner. Expect `Foundation validation passed.` Use a separate checkout while a watch server or another build is using the same output directories. [Foundation validation and security report](docs/development/foundation-validation.md)

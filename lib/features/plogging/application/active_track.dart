@@ -152,6 +152,7 @@ class ActiveTrackController extends Notifier<TrackView> {
     if (track == null) return;
     final generation = _generation;
     final elapsed = track.endedAt!.difference(track.startedAt);
+    var selectionLocked = state.phase == TrackPhase.saveError;
     state = TrackView(TrackPhase.saving, track: track, elapsed: elapsed);
     try {
       final drafts = _drafts!;
@@ -159,6 +160,7 @@ class ActiveTrackController extends Notifier<TrackView> {
       if (generation != _generation) return;
       final api = ref.read(plogApiProvider);
       final photos = await drafts.lockPhotos(track.id);
+      selectionLocked = true;
       for (final id in photos) {
         final photo = await drafts.readPhoto(track.id, id);
         if (generation != _generation) return;
@@ -172,6 +174,16 @@ class ActiveTrackController extends Notifier<TrackView> {
       }
     } catch (error) {
       if (generation == _generation) {
+        if (!selectionLocked) {
+          state = TrackView(
+            TrackPhase.stopped,
+            track: track,
+            elapsed: elapsed,
+            error:
+                'Could not save the selection on this device. Check your photos and retry.',
+          );
+          return;
+        }
         final conflict =
             error is ProtectedApiFailure &&
             (error.status == 404 || error.status == 409);
@@ -180,7 +192,7 @@ class ActiveTrackController extends Notifier<TrackView> {
           track: track,
           elapsed: elapsed,
           error: conflict
-              ? 'The server has a different result for this Plog. Your local route is still on this device.'
+              ? 'The server has a different result for this Plog. Your local route and photos are still on this device.'
               : 'Could not confirm the save. Retry to send the same activity.',
         );
       }

@@ -1,4 +1,4 @@
-import { type INestApplication } from '@nestjs/common';
+import { type INestApplication, ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -40,6 +40,7 @@ export function plogHttpContract() {
       await http.put(path + id).set(other).attach('photo', jpeg, 'photo.jpg').expect(404);
       await upload(id, Buffer.from('wrong bytes')).expect(415);
       await upload(id, jpeg.subarray(0, 12)).expect(400);
+      await upload(id, Buffer.alloc(8 * 1024 * 1024 + 1)).expect(413);
       const saved = await upload(id).expect(200);
       expect(saved.body).toMatchObject({ id, mediaType: 'image/jpeg', byteSize: jpeg.length });
       await upload(id).expect(200, saved.body);
@@ -51,8 +52,50 @@ export function plogHttpContract() {
       const retrieved = await http.get(path + id).set(auth).expect('Content-Type', 'image/jpeg')
         .expect('Cache-Control', 'private, no-store').expect(200);
       expect(retrieved.body).toEqual(jpeg);
-      const attempts = await Promise.all(Array.from({length: 6}, () => upload(randomUUID())));
-      expect(attempts.map(r => r.status).sort()).toEqual([200, 200, 200, 200, 200, 409]);
+      const boundary = Buffer.alloc(8 * 1024 * 1024);
+      jpeg.copy(boundary);
+      await upload(randomUUID(), boundary).expect(200);
+      const attempts = await Promise.all(Array.from({ length: 5 }, () => upload(randomUUID())));
+      expect(attempts.map(r => r.status).sort()).toEqual([200, 200, 200, 200, 409]);
+    });
+
+    it('hides interrupted uploads, retries them once, and preserves activity details if a stored image disappears', async () => {
+      const http = request(app.getHttpServer());
+      const { body: account } = await http.post('/api/auth/signup')
+        .send({ email: randomUUID() + '@example.test', password: randomUUID() }).expect(201);
+      const auth = { Authorization: 'Bearer ' + account.accessToken };
+      const { body: plog } = await http.post('/api/plogs').set(auth).expect(201);
+      const first = await attachPhoto(plog.id, auth);
+      const activity = '/api/plogs/' + plog.id;
+      const path = activity + '/evidence/';
+      const id = randomUUID();
+      const image = (background: string) => sharp({ create: { width: 2, height: 2, channels: 3, background } }).png().toBuffer();
+      const bytes = await image('blue');
+      const put = (photoId: string, data: Buffer) => http.put(path + photoId).set(auth).attach('photo', data, 'photo.png');
+      const finish = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route: [] };
+      const unavailable = jest.spyOn(app.get(EvidenceStorage), 'put');
+      try {
+        unavailable.mockRejectedValueOnce(new ServiceUnavailableException());
+        await put(id, bytes).expect(503);
+      } finally {
+        unavailable.mockRestore();
+      }
+      await http.get(path).set(auth).expect(200, { items: [first.body] });
+      await http.get(path + id).set(auth).expect(404);
+      await http.post(activity + '/finish').set(auth).send(finish).expect(422);
+      await put(id, await image('red')).expect(409);
+      const confirmed = await put(id, bytes).expect(200);
+      await http.post(activity + '/finish').set(auth).send(finish).expect(200);
+      await put(id, bytes).expect(200, confirmed.body);
+      await put(randomUUID(), bytes).expect(409);
+      await http.get(path).set(auth).expect(200, { items: [first.body, confirmed.body] });
+      const retrieved = await http.get(path + id).set(auth).expect(200);
+      expect(retrieved.body).toEqual(bytes);
+      await app.get(DataSource).query('UPDATE garbage_evidence SET storage_key = $1 WHERE id = $2',
+        ['evidence/' + randomUUID(), id]);
+      await http.get(path + id).set(auth).expect(404);
+      await http.get(path + first.body.id).set(auth).expect(200);
+      await http.get(activity).set(auth).expect(200).expect(res => expect(res.body.status).toBe('completed'));
     });
 
     it('stores and reads an image privately in the isolated S3 bucket', async () => {

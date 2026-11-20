@@ -1,18 +1,19 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup api app check validate validate-auth validate-plog down
+.PHONY: help setup api app check validate validate-auth validate-plog validate-evidence down
 
 DEVICE ?= linux
 
 help:
 	@printf '%s\n' \
 	  'make setup     Install locked dependencies and create missing local config files' \
-	  'make api       Start PostgreSQL, apply migrations and run the Nest watch server' \
+	  'make api       Start PostgreSQL and image storage, apply migrations and run the Nest watch server' \
 	  'make app       Run the configured Flutter app (DEVICE defaults to linux)' \
 	  'make check     Analyze and test Flutter and the backend without Docker' \
 	  'make validate  Run the full isolated Linux foundation checks' \
 	  'make validate-auth DEVICE=emulator-5554  Verify M2 on an empty Android emulator' \
 	  'make validate-plog DEVICE=emulator-5554  Verify M3 GPS tracking and completion' \
-	  'make down      Stop the development database and keep its volume'
+	  'make validate-evidence DEVICE=emulator-5554  Verify Android garbage-photo completion' \
+	  'make down      Stop development services and retain their volumes'
 
 setup: backend/.env config/development.local.json
 	node backend/tool/setup-auth-key.mjs
@@ -44,7 +45,7 @@ validate:
 validate-auth:
 	node tool/validate_auth.mjs "$(DEVICE)"
 
-validate-plog:
+validate-plog validate-evidence:
 	node tool/validate_plog.mjs "$(DEVICE)"
 
 down:

@@ -1,6 +1,7 @@
-// Test-only entry point for the disposable Android M3 validation stack.
+// Test-only entry point for the disposable Android Plog evidence validation stack.
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -99,9 +100,19 @@ void main() async {
           view().track!.endedAt != track.endedAt) {
         throw StateError('Activity changed after finish');
       }
+      final drafts = container.read(plogDraftsProvider);
+      final ids = await drafts.photoIds(track.id);
+      if (ids.length != 2 || !await drafts.photosLocked(track.id)) {
+        throw StateError('Missing or unlocked evidence in offline draft');
+      }
+      for (final id in ids) {
+        final photo = await drafts.readPhoto(track.id, id);
+        await marker('expected-$id').writeAsBytes(photo.bytes, flush: true);
+      }
       await marker('checkpoint').writeAsString(
         jsonEncode({
           'owner': owner,
+          'photos': ids,
           'id': track.id,
           'start': track.startedAt.millisecondsSinceEpoch,
           'end': track.endedAt!.millisecondsSinceEpoch,
@@ -121,6 +132,11 @@ void main() async {
       await waitFor(
         () => view().phase == TrackPhase.completed,
         'confirmed save',
+      );
+      await marker('completed').writeAsString('ok', flush: true);
+      await waitFor(
+        () => marker('storage-restarted').existsSync(),
+        'private storage restart',
       );
       final api = container.read(plogApiProvider);
       final history = await api.completed(null);
@@ -143,6 +159,16 @@ void main() async {
         throw StateError(
           'Persisted activity differs from the frozen GPS track',
         );
+      }
+      final ids = await api.evidence(record.id);
+      if (!listEquals(ids, List<String>.from(expected['photos'] as List))) {
+        throw StateError('Saved evidence differs from the selected photos');
+      }
+      for (final id in ids) {
+        final original = await marker('expected-$id').readAsBytes();
+        if (!listEquals(original, await api.image(record.id, id))) {
+          throw StateError('Retrieved image differs from the draft bytes');
+        }
       }
       await marker('verified').writeAsString('ok', flush: true);
     }

@@ -28,8 +28,15 @@ Future<String> photoType(Uint8List bytes) async {
       if (image.width * image.height > 32000000) {
         throw const FormatException('Choose a smaller photo.');
       }
-      final codec = await image.instantiateCodec(targetWidth: 96);
+      final landscape = image.width >= image.height;
+      final codec = await image.instantiateCodec(
+        targetWidth: landscape && image.width > 96 ? 96 : null,
+        targetHeight: !landscape && image.height > 96 ? 96 : null,
+      );
       try {
+        if (codec.frameCount != 1) {
+          throw const FormatException('Choose a still photograph.');
+        }
         (await codec.getNextFrame()).image.dispose();
       } finally {
         codec.dispose();

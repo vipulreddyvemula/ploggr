@@ -145,8 +145,7 @@ GPS subscription, including when the Android permission prompt is still open.
 In a signed-in Android session, select **Start Plog Session** on Home. The app
 checks for an active Plog before creating one. GPS starts after the server
 confirms the activity. Return to Home and use **Resume Plog Session** to see
-live time, distance and fix count. **Finish Plog** stops GPS and submits those
-measurements using the same authenticated API client as Settings.
+live time, distance and fix count. **Finish Plog** stops GPS and opens garbage-photo selection.
 
 Android checkpoints each new fix in an app-private SQLite transaction. Drafts
 are scoped to the API URL and account, and excluded from Android backup and
@@ -160,7 +159,6 @@ On Android, use the system Camera or Photos picker to select collected-garbage
 evidence for the current Plog. The local draft can retain up to six JPEG or
 PNG images, each up to 8 MiB. Selection uses Android's per-image access grant.
 
-**Finish Plog** stops GPS and freezes the track before photo selection.
 Choose one to six photos and tap **Save Plog**. The app locks that selection,
 uploads each image under its stable ID, then requests completion. **Retry save**
 recovers the same photo bytes and measurements after an outage or process restart.

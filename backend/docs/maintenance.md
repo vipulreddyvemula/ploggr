@@ -9,7 +9,7 @@ health module. `DatabaseModule` uses `TypeOrmModule.forRootAsync` to expose an
 injectable TypeORM `DataSource` globally. The standalone CLI creates a data source
 from the same options without starting NestJS.
 
-- NestJS runs on the host. Compose runs only the PostgreSQL/PostGIS database.
+- NestJS runs on the host. Compose runs PostgreSQL/PostGIS and the private SeaweedFS object store.
 - Both entrypoints validate `DB_*` values; process environment variables take
   precedence over `.env`. Both resolve the same backend file independently of
   working directory and skip it when the process environment has `NODE_ENV=test`.

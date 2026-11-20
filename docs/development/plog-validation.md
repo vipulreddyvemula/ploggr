@@ -17,8 +17,7 @@ make validate-plog DEVICE=emulator-5554
 
 The runner creates a disposable database and API, installs the test APK,
 selects Android permission buttons and sends simulated coordinates. It removes
-the APK, port forwarding rule and Compose project when it finishes. The final
-success line is `M3 Android Plog validation passed.`
+the APK, port forwarding rule and Compose project when it finishes. On M4 branches this runner also exercises the camera, gallery and private image storage. The final line is `Android Plog tracking, evidence and completion validation passed.` [Emulator requirements and evidence checks](evidence-validation.md)
 
 | Scenario | What the check observes |
 | --- | --- |

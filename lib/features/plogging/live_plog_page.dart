@@ -78,14 +78,14 @@ class LivePlogPage extends ConsumerWidget {
                 final discard = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Discard local route?'),
+                    title: const Text('Discard local Plog?'),
                     content: const Text(
-                      'This removes the route from this device.',
+                      'This removes the route and selected photos from this device.',
                     ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Keep route'),
+                        child: const Text('Keep draft'),
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, true),

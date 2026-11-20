@@ -15,7 +15,7 @@ await runCli(async signal => {
   assert.ok(!packages.split(/\s+/).includes('package:' + pkg), 'Use an emulator without Ploggr installed');
   await command('flutter', ['pub', 'get', '--enforce-lockfile']);
   await command('make', ['check']);
-  await runDatabaseIntegration(signal, async ({ env }) => {
+  await runDatabaseIntegration(signal, async ({ env, compose }) => {
     const port = await unusedPort();
     const apiEnv = { ...env, PORT: port };
     const phase = name => command('python3', ['tool/test_android_plog.py', device, name], { timeout: 360_000 });
@@ -36,6 +36,8 @@ await runCli(async signal => {
       api = startApi(apiEnv);
       await api.ready(signal);
       await phase('restore');
+      await compose(['up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'storage']);
+      await phase('retrieve');
     } finally {
       try { await api?.stop(); } finally {
         try { if (installed) await adb(['uninstall', pkg], { signal: undefined }); }
@@ -43,5 +45,5 @@ await runCli(async signal => {
       }
     }
   });
-  console.log('M3 Android Plog validation passed.');
+  console.log('Android Plog tracking, evidence and completion validation passed.');
 });

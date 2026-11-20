@@ -1,6 +1,6 @@
 # Ploggr backend
 
-The NestJS API runs on the host. TypeORM connects it to PostgreSQL 18 with PostGIS 3.7 in Docker Compose. The health module exposes process liveness and database readiness. For Flutter and backend development together, use the root quickstart. [Full-stack setup](../README.md#run-the-complete-foundation)
+The NestJS API runs on the host. TypeORM connects it to PostgreSQL 18 with PostGIS 3.7 in Docker Compose. Compose also runs SeaweedFS for private garbage photos. The health module exposes process liveness and database readiness. For Flutter and backend development together, use the root quickstart. [Full-stack setup](../README.md#run-the-complete-foundation)
 
 ## First-time setup
 
@@ -13,7 +13,7 @@ npm ci --include=dev
 node tool/setup-auth-key.mjs
 ```
 
-Choose local database credentials in `.env` before creating the first volume. Then start the database, run migrations, and check PostGIS.
+Choose local database credentials in `.env` before creating the first volume. The setup script generates backend-only local storage credentials. Then start PostgreSQL and image storage, run migrations, and check PostGIS.
 
 ```bash
 npm run db:up && npm run migration:run && npm run db:check
@@ -43,6 +43,9 @@ The `:prod` suffix selects compiled code. Environment values, hosting, credentia
 | `DB_NAME` | `ploggr` | Database created on first initialization. |
 | `DB_USER`, `DB_PASSWORD` | Required | Application role and password. Choose a role distinct from `postgres`. Passwords are used verbatim. |
 | `POSTGRES_PASSWORD` | Required by Compose | Administrator password for database initialization. |
+| `EVIDENCE_S3_BUCKET`, `EVIDENCE_S3_REGION` | Local bucket `ploggr-evidence`, region `us-east-1` | Private location for garbage photos. |
+| `EVIDENCE_S3_PORT`, `EVIDENCE_S3_ENDPOINT` | `8333`, `http://127.0.0.1:8333` locally | Set both to matching ports for a parallel checkout. Managed AWS S3 uses its regional endpoint by default. |
+| `EVIDENCE_S3_ACCESS_KEY`, `EVIDENCE_S3_SECRET_KEY` | Generated for local Compose | The backend can use a workload role for a managed bucket. [Storage configuration](docs/maintenance.md#private-image-storage) |
 | `COMPOSE_PROJECT_NAME` | Compose directory name | Choose a distinct project and volume for concurrent checkouts. |
 
 Nest and the CLI load the same ignored `.env` from source or compiled code. Process variables take precedence. When the process sets `NODE_ENV=test`, both use the process environment alone. Invalid settings fail startup. The local setup uses loopback TCP and the application role for queries and migrations. [Example configuration](.env.example) · [Client and server configuration](../docs/development/configuration.md)
@@ -54,10 +57,10 @@ Nest and the CLI load the same ignored `.env` from source or compiled code. Proc
 | `npm run check` | Lint, TypeScript checking, and unit/HTTP tests pass without a database. |
 | `npm run build` | Compiled JavaScript is written to `dist/`. |
 | `npm run test:e2e` | Runs only the ordinary HTTP tests. |
-| `npm run test:database` | Creates an isolated Compose project, verifies migrations, authentication, Plog ownership and GPS route storage, permissions, restart and failure behavior, then removes its test resources. |
+| `npm run test:database` | Creates an isolated Compose project, verifies migrations, authentication, Plog ownership, GPS route storage, private evidence upload and retrieval, permissions, restart and failure behavior, then removes its test resources. |
 | `npm run db:check` | Verifies the currently configured database and spatial functions. |
 
-The isolated integration suite rebuilds `dist/`. Use a separate checkout if a server is using that build output. After a hard interruption, inspect the printed `ploggr-test-...` project name before removing that disposable project with `docker compose --env-file .env.example -p <test-project> down --volumes`.
+The isolated integration suite rebuilds `dist/`. Use a separate checkout if a server is using that build output. After a hard interruption, inspect the printed `ploggr-test-...` project name before removing that disposable project with `docker compose -p <test-project> down --volumes`.
 
 With the API running, use another terminal to inspect its two health endpoints.
 
@@ -80,7 +83,7 @@ At the psql prompt, run `SELECT version();`, `SELECT PostGIS_Full_Version();`, o
 
 ## Stop and restart
 
-Stop Nest with Ctrl+C. Run `npm run db:down` to remove the container and retain its named volume. To restart, run `npm run db:up`, `npm run migration:run` and `npm run start:dev` in that order. Use `npm run db:logs` to follow database logs.
+Stop Nest with Ctrl+C. Run `npm run db:down` to stop the services and retain both named volumes. To restart, run `npm run db:up`, `npm run migration:run` and `npm run start:dev` in that order. Use `npm run db:logs` to follow database logs.
 
 ## Troubleshooting
 
@@ -93,7 +96,7 @@ Stop Nest with Ctrl+C. Run `npm run db:down` to remove the container and retain 
 
 ### Reset disposable development data
 
-**This permanently deletes the selected Compose project's database volume.** Only use it for a database you have decided to discard. Routine shutdown uses `npm run db:down`.
+**This permanently deletes the selected Compose project’s database and image volumes.** Use this only when you intend to discard both the database records and stored photos. Routine shutdown uses `npm run db:down`.
 
 ```bash
 docker compose down --volumes && npm run db:up && npm run migration:run
