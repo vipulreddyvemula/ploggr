@@ -43,6 +43,14 @@ export function plogHttpContract() {
       const saved = await upload(id).expect(200);
       expect(saved.body).toMatchObject({ id, mediaType: 'image/jpeg', byteSize: jpeg.length });
       await upload(id).expect(200, saved.body);
+      await http.get(path).expect(401);
+      await http.get(path + id).expect(401);
+      await http.get(path).set(other).expect(404);
+      await http.get(path + id).set(other).expect(404);
+      await http.get(path).set(auth).expect(200, { items: [saved.body] });
+      const retrieved = await http.get(path + id).set(auth).expect('Content-Type', 'image/jpeg')
+        .expect('Cache-Control', 'private, no-store').expect(200);
+      expect(retrieved.body).toEqual(jpeg);
       const attempts = await Promise.all(Array.from({length: 6}, () => upload(randomUUID())));
       expect(attempts.map(r => r.status).sort()).toEqual([200, 200, 200, 200, 200, 409]);
     });

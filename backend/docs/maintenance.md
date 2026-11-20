@@ -396,3 +396,8 @@ New Plogs require **one to six confirmed photos** at completion. Finish checks
 the photo reservations under the same Plog row lock that serializes uploads.
 It returns 422 if any upload is pending or if no photos have been stored. M3
 activities already completed remain readable and support identical finish retries.
+
+Use authenticated GET requests to list `/api/plogs/:plogId/evidence` and read
+`/api/plogs/:plogId/evidence/:id` as image bytes. The list contains confirmed
+photos. A foreign Plog or inaccessible photo returns 404. The activity screen
+can retry an unavailable photo independently of its GPS summary.

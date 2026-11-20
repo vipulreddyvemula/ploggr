@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import 'data/completed_plog.dart';
+import 'saved_photos.dart';
 import 'data/plog_api.dart';
 
 final _activities = FutureProvider.autoDispose
@@ -71,6 +72,7 @@ class _PlogActivityPageState extends ConsumerState<PlogActivityPage> {
                           Text(
                             'Last fix   ${route.last.latitude}, ${route.last.longitude}',
                           ),
+                        SavedPhotos(plog.id),
                       ],
                     );
                   },

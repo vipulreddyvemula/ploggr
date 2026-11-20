@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnsupportedMediaTypeException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnsupportedMediaTypeException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-import { DataSource, IsNull, QueryFailedError } from 'typeorm';
+import { DataSource, IsNull, Not, QueryFailedError } from 'typeorm';
 import { Plog } from '../plogs/plog.entity';
 import { EvidenceStorage } from './evidence-storage';
 import { GarbageEvidence } from './garbage-evidence.entity';
@@ -32,6 +32,27 @@ function reference(photo: GarbageEvidence) {
 @Injectable()
 export class EvidenceService {
   constructor(private readonly source: DataSource, private readonly storage: EvidenceStorage) {}
+
+  async list(owner: string, plogId: string) {
+    const owned = { id: plogId, user: { id: owner } };
+    if (!await this.source.getRepository(Plog).existsBy(owned)) throw new NotFoundException();
+    const photos = await this.source.getRepository(GarbageEvidence).find({
+      where: { plog: owned, uploadedAt: Not(IsNull()) }, order: { createdAt: 'ASC', id: 'ASC' },
+    });
+    return { items: photos.map(reference) };
+  }
+
+  async image(owner: string, plogId: string, id: string) {
+    const photo = await this.source.getRepository(GarbageEvidence).findOneBy({
+      id, plog: { id: plogId, user: { id: owner } }, uploadedAt: Not(IsNull()),
+    });
+    if (!photo) throw new NotFoundException();
+    const bytes = await this.storage.read(photo.storageKey);
+    if (bytes.length !== photo.byteSize || createHash('sha256').update(bytes).digest('hex') !== photo.sha256) {
+      throw new ServiceUnavailableException('Image unavailable');
+    }
+    return { bytes, mediaType: photo.mediaType };
+  }
 
   async upload(owner: string, plogId: string, id: string, input?: PhotoUpload) {
     const file = await validatePhoto(input);

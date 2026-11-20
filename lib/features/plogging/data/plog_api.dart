@@ -61,6 +61,35 @@ class PlogApi {
     return result;
   }
 
+  Future<List<String>> evidence(String plogId) async {
+    final result = await client.request<Object?>(
+      'GET',
+      'plogs/$plogId/evidence',
+    );
+    if (result case {'items': List items}) {
+      return [
+        for (final item in items)
+          switch (item) {
+            {'id': String id} => id,
+            _ => throw const FormatException('Invalid photo reference'),
+          },
+      ];
+    }
+    throw const FormatException('Invalid evidence list');
+  }
+
+  Future<Uint8List> image(String plogId, String photoId) async {
+    final result = await client.request<List<int>>(
+      'GET',
+      'plogs/$plogId/evidence/$photoId',
+      responseType: ResponseType.bytes,
+    );
+    if (result == null || result.isEmpty) {
+      throw const FormatException('Missing image data');
+    }
+    return Uint8List.fromList(result);
+  }
+
   Future<void> upload(
     String plogId,
     String photoId,

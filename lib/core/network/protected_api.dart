@@ -22,6 +22,7 @@ class ProtectedApi {
     Object? data,
     Map<String, dynamic>? queryParameters,
     CancelToken? cancelToken,
+    ResponseType? responseType,
   }) async {
     final relative = Uri.parse(path);
     final base = Uri.parse(_client.options.baseUrl);
@@ -53,6 +54,7 @@ class ProtectedApi {
           cancelToken: cancelToken,
           options: Options(
             method: verb,
+            responseType: responseType,
             followRedirects: false,
             headers: {'Authorization': 'Bearer ${credential.token}'},
           ),
