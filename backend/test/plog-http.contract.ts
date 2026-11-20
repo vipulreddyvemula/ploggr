@@ -2,6 +2,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import sharp from 'sharp';
 import { DataSource } from 'typeorm';
 import { EvidenceStorage } from '../src/modules/evidence/evidence-storage';
 import { AppModule } from '../src/app.module';
@@ -16,6 +17,29 @@ export function plogHttpContract() {
       await app.init();
     });
     afterAll(async () => { await app?.close(); });
+
+    it('validates image content and limits concurrent reservations to six per owned Plog', async () => {
+      const http = request(app.getHttpServer());
+      const account = async () => (await http.post('/api/auth/signup').send({
+        email: randomUUID() + '@example.test', password: randomUUID(),
+      }).expect(201)).body.accessToken;
+      const auth = { Authorization: 'Bearer ' + await account() };
+      const other = { Authorization: 'Bearer ' + await account() };
+      const { body: plog } = await http.post('/api/plogs').set(auth).expect(201);
+      const jpeg = await sharp({ create: { width: 3, height: 3, channels: 3, background: 'red' } }).jpeg().toBuffer();
+      const path = '/api/plogs/' + plog.id + '/evidence/';
+      const upload = (id: string, bytes = jpeg) => http.put(path + id).set(auth).attach('photo', bytes, 'photo.jpg');
+      const id = randomUUID();
+      await http.put(path + id).expect(401);
+      await http.put(path + id).set(other).attach('photo', jpeg, 'photo.jpg').expect(404);
+      await upload(id, Buffer.from('wrong bytes')).expect(415);
+      await upload(id, jpeg.subarray(0, 12)).expect(400);
+      const saved = await upload(id).expect(200);
+      expect(saved.body).toMatchObject({ id, mediaType: 'image/jpeg', byteSize: jpeg.length });
+      await upload(id).expect(200, saved.body);
+      const attempts = await Promise.all(Array.from({length: 6}, () => upload(randomUUID())));
+      expect(attempts.map(r => r.status).sort()).toEqual([200, 200, 200, 200, 200, 409]);
+    });
 
     it('stores and reads an image privately in the isolated S3 bucket', async () => {
       const storage = app.get(EvidenceStorage);

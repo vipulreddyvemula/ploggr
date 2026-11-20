@@ -384,3 +384,10 @@ and grant the backend workload role GetObject and PutObject on its evidence
 prefix. For another S3-compatible service, set `EVIDENCE_S3_ENDPOINT` and the
 backend-only `EVIDENCE_S3_ACCESS_KEY` and `EVIDENCE_S3_SECRET_KEY`. Use HTTPS
 in production. Android receives image bytes through the authenticated API.
+
+The Android client assigns each selected photo a UUID. Upload it with a bearer
+token to `PUT /api/plogs/:plogId/evidence/:id` as multipart field `photo`.
+The API decodes JPEG/PNG images up to 8 MiB and 32 megapixels and reserves a
+slot on the owner's active Plog. A successful retry with the same ID and bytes
+returns the original metadata. Each Plog has six slots. An interrupted storage
+write keeps its reservation for retry and its image stays hidden until confirmed.
