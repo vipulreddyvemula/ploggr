@@ -136,3 +136,8 @@ device location and grant precise access for walking routes. If Android stops
 offering the prompt, open the app's system permissions to allow Location, then
 retry GPS. The tracker requests foreground fixes with a three-meter movement
 filter and releases its subscription when tracking ends.
+
+The live Riverpod controller keeps a Plog ID, start time, elapsed time, ordered
+fixes and cumulative distance in meters. A failed GPS stream retains the track
+and offers a retry. Finishing freezes the measurements and stops the timer and
+GPS subscription, including when the Android permission prompt is still open.
