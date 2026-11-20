@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/protected_api.dart';
 import '../../auth/session/session_controller.dart';
@@ -57,6 +59,31 @@ class PlogApi {
       throw const FormatException('Unexpected Plog identifier');
     }
     return result;
+  }
+
+  Future<void> upload(
+    String plogId,
+    String photoId,
+    String type,
+    Uint8List bytes,
+  ) async {
+    final part = MultipartFile.fromBytes(
+      bytes,
+      filename: type == 'image/jpeg' ? 'photo.jpg' : 'photo.png',
+      contentType: DioMediaType.parse(type),
+    );
+    final result = await client.request<Object?>(
+      'PUT',
+      'plogs/$plogId/evidence/$photoId',
+      data: FormData.fromMap({'photo': part}),
+    );
+    if (result case {
+      'id': String id,
+      'uploadedAt': String _,
+    } when id == photoId) {
+      return;
+    }
+    throw const FormatException('Invalid photo acknowledgement');
   }
 
   Future<void> finish(PlogTrack track) async {

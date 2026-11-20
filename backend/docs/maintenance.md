@@ -391,3 +391,8 @@ The API decodes JPEG/PNG images up to 8 MiB and 32 megapixels and reserves a
 slot on the owner's active Plog. A successful retry with the same ID and bytes
 returns the original metadata. Each Plog has six slots. An interrupted storage
 write keeps its reservation for retry and its image stays hidden until confirmed.
+
+New Plogs require **one to six confirmed photos** at completion. Finish checks
+the photo reservations under the same Plog row lock that serializes uploads.
+It returns 422 if any upload is pending or if no photos have been stored. M3
+activities already completed remain readable and support identical finish retries.

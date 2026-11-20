@@ -41,6 +41,35 @@ class PlogDrafts {
       plog_id TEXT NOT NULL, media_type TEXT, bytes BLOB)''');
   }
 
+  Future<bool> photosLocked(String id) => _ordered((db) async {
+    final rows = await db.query(
+      'drafts',
+      columns: ['photo_locked'],
+      where: 'scope=? AND id=?',
+      whereArgs: [scope, id],
+    );
+    return rows.single['photo_locked'] == 1;
+  });
+
+  Future<List<String>> lockPhotos(String id) => _ordered(
+    (db) => db.transaction((tx) async {
+      final rows = await tx.rawQuery(
+        'SELECT id, bytes IS NOT NULL AS ready FROM photos WHERE scope=? AND plog_id=? ORDER BY rowid',
+        [scope, id],
+      );
+      if (rows.isEmpty || rows.length > 6 || rows.any((r) => r['ready'] != 1)) {
+        throw StateError('Select one to six photos before saving.');
+      }
+      await tx.update(
+        'drafts',
+        {'photo_locked': 1},
+        where: 'scope=? AND id=?',
+        whereArgs: [scope, id],
+      );
+      return rows.map((r) => r['id'] as String).toList();
+    }),
+  );
+
   Future<List<String>> photoIds(String plogId) => _ordered(
     (db) async => (await db.query(
       'photos',

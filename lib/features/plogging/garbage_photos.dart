@@ -43,6 +43,13 @@ Future<String> photoType(Uint8List bytes) async {
   return type;
 }
 
+final _thumbnail = FutureProvider.autoDispose
+    .family<Uint8List, (String, String)>(
+      (ref, key) async =>
+          (await ref.watch(plogDraftsProvider).readPhoto(key.$1, key.$2)).bytes,
+      retry: (_, _) => null,
+    );
+
 class GarbagePhotos extends ConsumerStatefulWidget {
   const GarbagePhotos(this.plogId, {super.key, this.onSave});
   final String plogId;
@@ -138,6 +145,19 @@ class _GarbagePhotosState extends ConsumerState<GarbagePhotos> {
       if (error != null) Text(error!),
       for (final (index, id) in ids.indexed)
         ListTile(
+          leading: ref
+              .watch(_thumbnail((widget.plogId, id)))
+              .when(
+                data: (bytes) => Image.memory(
+                  bytes,
+                  width: 48,
+                  height: 48,
+                  cacheWidth: 96,
+                  fit: BoxFit.cover,
+                ),
+                loading: () => const SizedBox(width: 48),
+                error: (_, _) => const Icon(Icons.broken_image),
+              ),
           title: Text('Garbage photo ${index + 1}'),
           trailing: IconButton(
             tooltip: 'Remove photo ${index + 1}',

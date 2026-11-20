@@ -18,6 +18,12 @@ export function plogHttpContract() {
     });
     afterAll(async () => { await app?.close(); });
 
+    async function attachPhoto(id: string, auth: { Authorization: string }) {
+      const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'green' } }).png().toBuffer();
+      return request(app.getHttpServer()).put('/api/plogs/' + id + '/evidence/' + randomUUID())
+        .set(auth).attach('photo', photo, 'evidence.png').expect(200);
+    }
+
     it('validates image content and limits concurrent reservations to six per owned Plog', async () => {
       const http = request(app.getHttpServer());
       const account = async () => (await http.post('/api/auth/signup').send({
@@ -77,6 +83,8 @@ export function plogHttpContract() {
       await http.post(url).set(foreign).send(data).expect(404);
       await http.post(url).set(auth).send({ ...data, route: [{ latitude: 121, longitude: 0 }] }).expect(400);
       await http.post(url).set(auth).send({ ...data, endedAt: '2000-01-01T00:00:00Z' }).expect(400);
+      await http.post(url).set(auth).send(data).expect(422);
+      await attachPhoto(active.id, auth);
       const completed = await http.post(url).set(auth).send(data).expect(200);
       expect(completed.body).toMatchObject({ id: active.id, status: 'completed', endedAt: data.endedAt });
       await http.get(detail).expect(401);
@@ -107,6 +115,7 @@ export function plogHttpContract() {
       expect(last.body.nextCursor).toBeNull();
       expect(new Set([...first.body.items, ...last.body.items].map(p => p.id)).size).toBe(26);
       const { body: active } = await http.post('/api/plogs').set(auth).expect(201);
+      await attachPhoto(active.id, auth);
       const route = Array.from({ length: 3500 }, (_, i) => ({ latitude: 37.422, longitude: -122 + i / 100000 }));
       const finish = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route };
       expect(JSON.stringify(finish).length).toBeGreaterThan(102400);

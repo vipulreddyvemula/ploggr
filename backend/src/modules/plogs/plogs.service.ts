@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { FinishPlogDto } from './plog.dto';
 import { Plog } from './plog.entity';
@@ -72,6 +72,12 @@ export class PlogsService {
           return summary(plog, userId);
         }
         throw new ConflictException('The Plog was already completed');
+      }
+      const [photos] = await manager.query(`
+        SELECT count(*)::int AS total, count(uploaded_at)::int AS ready FROM garbage_evidence WHERE plog_id = $1
+      `, [id]);
+      if (photos.ready < 1 || photos.ready > 6 || photos.ready !== photos.total) {
+        throw new UnprocessableEntityException('Upload one to six garbage photos before finishing');
       }
       await manager.query(`
         INSERT INTO plog_route_points (plog_id, sequence, location)

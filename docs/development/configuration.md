@@ -159,3 +159,8 @@ available until you explicitly discard it.
 On Android, use the system Camera or Photos picker to select collected-garbage
 evidence for the current Plog. The local draft can retain up to six JPEG or
 PNG images, each up to 8 MiB. Selection uses Android's per-image access grant.
+
+**Finish Plog** stops GPS and freezes the track before photo selection.
+Choose one to six photos and tap **Save Plog**. The app locks that selection,
+uploads each image under its stable ID, then requests completion. **Retry save**
+recovers the same photo bytes and measurements after an outage or process restart.

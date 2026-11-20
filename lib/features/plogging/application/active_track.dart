@@ -78,11 +78,15 @@ class ActiveTrackController extends Notifier<TrackView> {
       final draft = await drafts.load();
       if (generation != _generation) return;
       if (draft != null && draft.endedAt != null) {
+        final locked = await drafts.photosLocked(draft.id);
+        if (generation != _generation) return;
         state = TrackView(
-          TrackPhase.saveError,
+          locked ? TrackPhase.saveError : TrackPhase.stopped,
           track: draft,
           elapsed: draft.endedAt!.difference(draft.startedAt),
-          error: 'Recovered your finished Plog. Retry to confirm the save.',
+          error: locked
+              ? 'Recovered your Plog and photos. Retry to confirm the save.'
+              : null,
         );
         return;
       }
@@ -120,6 +124,25 @@ class ActiveTrackController extends Notifier<TrackView> {
     }
   }
 
+  Future<void> selectEvidence() async {
+    final track = freeze();
+    if (track == null) return;
+    final generation = _generation;
+    try {
+      await _drafts!.save(track);
+    } catch (_) {
+      if (generation == _generation) {
+        state = TrackView(
+          TrackPhase.stopped,
+          track: track,
+          elapsed: state.elapsed,
+          error:
+              'Could not checkpoint the finish time. Keep this screen open and retry saving.',
+        );
+      }
+    }
+  }
+
   Future<void> submit() async {
     if (state.phase == TrackPhase.saving ||
         state.phase == TrackPhase.completed) {
@@ -134,7 +157,15 @@ class ActiveTrackController extends Notifier<TrackView> {
       final drafts = _drafts!;
       await drafts.save(track);
       if (generation != _generation) return;
-      await ref.read(plogApiProvider).finish(track);
+      final api = ref.read(plogApiProvider);
+      final photos = await drafts.lockPhotos(track.id);
+      for (final id in photos) {
+        final photo = await drafts.readPhoto(track.id, id);
+        if (generation != _generation) return;
+        await api.upload(track.id, id, photo.type, photo.bytes);
+      }
+      if (generation != _generation) return;
+      await api.finish(track);
       await drafts.remove(track.id);
       if (generation == _generation) {
         state = TrackView(TrackPhase.completed, track: track, elapsed: elapsed);

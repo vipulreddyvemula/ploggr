@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ploggr/features/plogging/application/active_track.dart';
@@ -31,6 +32,13 @@ class FakePlogApi extends Fake implements PlogApi {
   }
 
   @override
+  Future<void> upload(
+    String plogId,
+    String photoId,
+    String type,
+    Uint8List bytes,
+  ) async {}
+  @override
   Future<void> finish(PlogTrack track) async {
     finishes++;
     submitted = track;
@@ -40,6 +48,20 @@ class FakePlogApi extends Fake implements PlogApi {
 
 class MemoryDrafts extends Fake implements PlogDrafts {
   PlogTrack? record;
+  bool locked = false;
+  @override
+  Future<bool> photosLocked(String id) async => locked;
+  @override
+  Future<List<String>> lockPhotos(String id) async {
+    locked = true;
+    return ['photo'];
+  }
+
+  @override
+  Future<({String type, Uint8List bytes})> readPhoto(
+    String plog,
+    String id,
+  ) async => (type: 'image/png', bytes: Uint8List(0));
   @override
   Future<PlogTrack?> load() async => record;
   @override

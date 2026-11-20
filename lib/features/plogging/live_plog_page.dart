@@ -59,9 +59,13 @@ class LivePlogPage extends ConsumerWidget {
             TrackPhase.tracking,
             TrackPhase.gpsError,
           ].contains(phase))
-            PrimaryButton('Finish Plog', onPressed: controller.submit),
-          if (track != null && phase == TrackPhase.tracking)
-            GarbagePhotos(track.id, key: ValueKey(track.id)),
+            PrimaryButton('Finish Plog', onPressed: controller.selectEvidence),
+          if (track != null && phase == TrackPhase.stopped)
+            GarbagePhotos(
+              track.id,
+              key: ValueKey(track.id),
+              onSave: controller.submit,
+            ),
           if (phase == TrackPhase.completed)
             PrimaryButton(
               'View activity',
