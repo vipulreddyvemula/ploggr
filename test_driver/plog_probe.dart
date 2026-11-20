@@ -1,0 +1,158 @@
+// Test-only entry point for the disposable Android M3 validation stack.
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+import 'package:ploggr/app.dart';
+import 'package:ploggr/core/config/app_config.dart';
+import 'package:ploggr/core/config/app_config_provider.dart';
+import 'package:ploggr/features/auth/session/session_controller.dart';
+import 'package:ploggr/features/plogging/application/active_track.dart';
+import 'package:ploggr/features/plogging/data/plog_api.dart';
+import 'package:ploggr/features/plogging/data/plog_drafts.dart';
+
+File marker(String name) =>
+    File('${Directory.systemTemp.parent.path}/cache/plog-$name');
+
+Future<void> waitFor(bool Function() ready, String description) async {
+  final until = DateTime.now().add(const Duration(minutes: 3));
+  while (!ready()) {
+    if (DateTime.now().isAfter(until)) {
+      throw StateError('Timed out during $description');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Expose the same accessibility tree used by screen readers to host UI automation.
+  final semantics = WidgetsBinding.instance.ensureSemantics();
+  final container = ProviderContainer(
+    overrides: [
+      appConfigProvider.overrideWithValue(AppConfig.fromEnvironment()),
+    ],
+  );
+  runApp(
+    UncontrolledProviderScope(container: container, child: const PloggrApp()),
+  );
+  TrackView view() => container.read(activeTrackProvider);
+  try {
+    final sessions = container.read(sessionControllerProvider.notifier);
+    await sessions.accessToken();
+    final restoring = await marker('checkpoint').exists();
+    if (!restoring) {
+      await sessions.signup(
+        '${const Uuid().v4()}@example.test',
+        const Uuid().v4(),
+      );
+    }
+    final owner = container.read(sessionControllerProvider).user!.id;
+    if (!restoring) {
+      await marker('ready').writeAsString('ok');
+      await waitFor(
+        () => view().phase == TrackPhase.gpsError,
+        'permission denial',
+      );
+      if (view().track!.route.isNotEmpty) {
+        throw StateError('Recorded GPS before permission');
+      }
+      await marker('denied').writeAsString('ok');
+      await waitFor(
+        () => view().phase == TrackPhase.tracking,
+        'location access',
+      );
+      await marker('tracking').writeAsString('ok');
+      for (final (index, longitude) in [-122.084, -122.083].indexed) {
+        await waitFor(
+          () => view().track!.route.any(
+            (p) =>
+                (p.latitude - 37.422).abs() < 0.0001 &&
+                (p.longitude - longitude).abs() < 0.0001,
+          ),
+          'fix $index',
+        );
+        await marker('fix-$index').writeAsString('ok');
+      }
+      await waitFor(
+        () => view().phase == TrackPhase.saveError,
+        'offline finish',
+      );
+      final track = (await container.read(plogDraftsProvider).load())!;
+      if (track.endedAt == null ||
+          track.distanceMeters < 60 ||
+          track.route.length < 2) {
+        throw StateError('Incomplete durable finish');
+      }
+      await marker('frozen').writeAsString('ok');
+      final deadline = DateTime.now().add(const Duration(seconds: 45));
+      while (!await marker('extra-fix').exists() &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      if (!await marker('extra-fix').exists()) {
+        throw StateError('Missing post-finish GPS check');
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (view().track!.route.length != track.route.length ||
+          view().track!.endedAt != track.endedAt) {
+        throw StateError('Activity changed after finish');
+      }
+      await marker('checkpoint').writeAsString(
+        jsonEncode({
+          'owner': owner,
+          'id': track.id,
+          'start': track.startedAt.millisecondsSinceEpoch,
+          'end': track.endedAt!.millisecondsSinceEpoch,
+          'seconds': track.endedAt!.difference(track.startedAt).inSeconds,
+          'meters': track.distanceMeters,
+          'route': [
+            for (final p in track.route) [p.latitude, p.longitude],
+          ],
+        }),
+        flush: true,
+      );
+    } else {
+      final expected =
+          jsonDecode(await marker('checkpoint').readAsString()) as Map;
+      if (owner != expected['owner']) throw StateError('Account changed');
+      await marker('reopened').writeAsString('ok');
+      await waitFor(
+        () => view().phase == TrackPhase.completed,
+        'confirmed save',
+      );
+      final api = container.read(plogApiProvider);
+      final history = await api.completed(null);
+      if (history.items.length != 1 ||
+          history.items.single.id != expected['id'] ||
+          await api.active() != null) {
+        throw StateError('Unexpected completed activity list');
+      }
+      final record = await api.detail(history.items.single.id);
+      final route = [
+        for (final p in record.route!) [p.latitude, p.longitude],
+      ];
+      if (record.seconds < 1 ||
+          record.seconds != expected['seconds'] ||
+          record.meters != expected['meters'] ||
+          jsonEncode(route) != jsonEncode(expected['route']) ||
+          record.startedAt.millisecondsSinceEpoch != expected['start'] ||
+          record.endedAt.millisecondsSinceEpoch != expected['end'] ||
+          await container.read(plogDraftsProvider).load() != null) {
+        throw StateError(
+          'Persisted activity differs from the frozen GPS track',
+        );
+      }
+      await marker('verified').writeAsString('ok', flush: true);
+    }
+  } catch (error) {
+    final reason = error is StateError
+        ? error.message
+        : error.runtimeType.toString();
+    await marker('failure').writeAsString(reason, flush: true);
+  } finally {
+    // The app remains on screen for the final activity-detail UI check.
+    semantics.dispose();
+  }
+}

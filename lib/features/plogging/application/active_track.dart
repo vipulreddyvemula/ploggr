@@ -38,6 +38,7 @@ final activeTrackProvider = NotifierProvider<ActiveTrackController, TrackView>(
 );
 
 class ActiveTrackController extends Notifier<TrackView> {
+  PlogDrafts? _drafts;
   Timer? _timer;
   StreamSubscription<RouteFix>? _positions;
   int _generation = 0;
@@ -47,6 +48,7 @@ class ActiveTrackController extends Notifier<TrackView> {
 
   @override
   TrackView build() {
+    _drafts = null;
     ref.onDispose(_stop);
     return const TrackView(TrackPhase.idle);
   }
@@ -72,6 +74,7 @@ class ActiveTrackController extends Notifier<TrackView> {
     try {
       final api = ref.read(plogApiProvider);
       final drafts = ref.read(plogDraftsProvider);
+      _drafts = drafts;
       final draft = await drafts.load();
       if (generation != _generation) return;
       if (draft != null && draft.endedAt != null) {
@@ -128,11 +131,10 @@ class ActiveTrackController extends Notifier<TrackView> {
     final elapsed = track.endedAt!.difference(track.startedAt);
     state = TrackView(TrackPhase.saving, track: track, elapsed: elapsed);
     try {
-      final api = ref.read(plogApiProvider);
-      final drafts = ref.read(plogDraftsProvider);
+      final drafts = _drafts!;
       await drafts.save(track);
       if (generation != _generation) return;
-      await api.finish(track);
+      await ref.read(plogApiProvider).finish(track);
       await drafts.remove(track.id);
       if (generation == _generation) {
         state = TrackView(TrackPhase.completed, track: track, elapsed: elapsed);
@@ -200,7 +202,8 @@ class ActiveTrackController extends Notifier<TrackView> {
   Future<void> _listen() async {
     final generation = ++_generation;
     final source = ref.read(locationSourceProvider);
-    final drafts = ref.read(plogDraftsProvider);
+    final drafts = _drafts ?? ref.read<PlogDrafts>(plogDraftsProvider);
+    _drafts = drafts;
     state = TrackView(
       TrackPhase.locating,
       track: state.track,

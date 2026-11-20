@@ -6,6 +6,11 @@ Ploggr is a Flutter app for people who pick up litter while walking or jogging. 
 
 The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. On Android with a configured API, Login and Sign Up establish a live session. Profile → Settings shows the authenticated email and offers Log out. Desktop development and unconfigured debug builds retain the sample preview. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
 
+Signed-in Android users can start a Plog from Home, record a GPS route, and
+finish the activity. **Profile → My Activity** shows saved routes, distances
+and times. Android keeps a recoverable draft during tracking and while waiting
+for the server to confirm a save. [Android tracking](docs/development/configuration.md#android-plog-location) · [Plog API](backend/docs/maintenance.md#plog-lifecycle-api)
+
 ## Get a checkout
 
 For ordinary development, clone upstream.
@@ -73,6 +78,7 @@ Flutter screen → Riverpod controller → Dio → GET /api/health/ready
 | `make check` | After setup, run Flutter analysis and unit/widget tests, then backend lint, type-checking and unit/HTTP tests. Works without Docker. |
 | `make validate` | Install locked dependencies, build both applications, verify migrations and PostGIS, and drive a real Linux app through database and API outages and recovery. Uses a disposable Compose project and random ports. |
 | `make validate-auth DEVICE=emulator-5554` | Verify signup, login, identity, session persistence, and logout on an empty Android emulator against an isolated API and database. [M2 acceptance report](docs/development/authentication-validation.md) |
+| `make validate-plog DEVICE=emulator-5554` | Exercise location permission, GPS fixes, offline finish, process restart and activity retrieval on a disposable Android emulator. [M3 verification](docs/development/plog-validation.md) |
 | `flutter build apk --debug` | Build an Android debug APK with the Android toolchain. |
 
 Full validation requires Docker and a Linux display. Use `xvfb-run -a make validate` on headless Linux with Xvfb and xauth installed. CI runs the same Node runner. Expect `Foundation validation passed.` Use a separate checkout while a watch server or another build is using the same output directories. [Foundation validation and security report](docs/development/foundation-validation.md)

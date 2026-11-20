@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup api app check validate validate-auth down
+.PHONY: help setup api app check validate validate-auth validate-plog down
 
 DEVICE ?= linux
 
@@ -11,6 +11,7 @@ help:
 	  'make check     Analyze and test Flutter and the backend without Docker' \
 	  'make validate  Run the full isolated Linux foundation checks' \
 	  'make validate-auth DEVICE=emulator-5554  Verify M2 on an empty Android emulator' \
+	  'make validate-plog DEVICE=emulator-5554  Verify M3 GPS tracking and completion' \
 	  'make down      Stop the development database and keep its volume'
 
 setup: backend/.env config/development.local.json
@@ -42,6 +43,9 @@ validate:
 
 validate-auth:
 	node tool/validate_auth.mjs "$(DEVICE)"
+
+validate-plog:
+	node tool/validate_plog.mjs "$(DEVICE)"
 
 down:
 	npm --prefix backend run db:down

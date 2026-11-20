@@ -2,6 +2,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 
@@ -52,6 +53,30 @@ export function plogHttpContract() {
       await http.post(url).set(auth).send(data).expect(200, completed.body);
       await http.post(url).set(auth).send({ ...data, route: [] }).expect(409);
       await http.get('/api/plogs/active').set(auth).expect(200, { plog: null });
+    });
+
+    it('pages completed activities with tied end times and accepts routes above the default JSON limit', async () => {
+      const http = request(app.getHttpServer());
+      const { body: owner } = await http.post('/api/auth/signup')
+        .send({ email: randomUUID() + '@example.test', password: randomUUID() }).expect(201);
+      const auth = { Authorization: 'Bearer ' + owner.accessToken };
+      await app.get(DataSource).query(`
+        INSERT INTO plogs(user_id, started_at, ended_at, status)
+        SELECT $1, now(), now(), 'completed' FROM generate_series(1, 26)
+      `, [owner.user.id]);
+      const first = await http.get('/api/plogs').set(auth).expect(200);
+      expect(first.body.items).toHaveLength(25);
+      expect(first.body.nextCursor).toBe(first.body.items[24].id);
+      const last = await http.get('/api/plogs').set(auth).query({ before: first.body.nextCursor }).expect(200);
+      expect(last.body.nextCursor).toBeNull();
+      expect(new Set([...first.body.items, ...last.body.items].map(p => p.id)).size).toBe(26);
+      const { body: active } = await http.post('/api/plogs').set(auth).expect(201);
+      const route = Array.from({ length: 3500 }, (_, i) => ({ latitude: 37.422, longitude: -122 + i / 100000 }));
+      const finish = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route };
+      expect(JSON.stringify(finish).length).toBeGreaterThan(102400);
+      await http.post('/api/plogs/' + active.id + '/finish').set(auth).send(finish).expect(200);
+      const { body: saved } = await http.get('/api/plogs/' + active.id).set(auth).expect(200);
+      expect(saved.route).toEqual(route);
     });
   });
 }

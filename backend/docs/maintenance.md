@@ -124,8 +124,8 @@ inserts run concurrently.
 
 Each row in `plogs` represents one cleanup activity. Its UUID is stable across
 the activity's lifetime. The required `user_id` references `users.id`, so signing
-out or rotating a session leaves the activity attached to its owner. M3.2 will
-use the authenticated user's ID when starting or looking up a Plog. [M3.1 data model](https://github.com/devBuildersunique/ploggr/issues/20) · [M3.2 lifecycle API](https://github.com/devBuildersunique/ploggr/issues/21)
+out or rotating a session leaves the activity attached to its owner. The lifecycle API
+uses the authenticated user's ID when starting or looking up a Plog. [M3.1 data model](https://github.com/devBuildersunique/ploggr/issues/20) · [M3.2 lifecycle API](https://github.com/devBuildersunique/ploggr/issues/21)
 
 A new Plog defaults to `active` with a start time and zero measurements. A
 partial unique index on the owner allows only one active Plog per user, even

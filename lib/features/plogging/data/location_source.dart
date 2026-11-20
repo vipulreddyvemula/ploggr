@@ -42,6 +42,8 @@ class LocationSource {
     return platform
         .getPositionStream(
           locationSettings: AndroidSettings(
+            // Use Android location services directly, including on devices without Play Services.
+            forceLocationManager: true,
             accuracy: LocationAccuracy.high,
             distanceFilter: 3,
             intervalDuration: const Duration(seconds: 2),
