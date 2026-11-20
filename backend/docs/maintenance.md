@@ -364,3 +364,12 @@ owner, ordered by end time and then UUID descending. Supply the returned
 `GET /api/plogs/:id` returns an owned completed summary and its ordered route
 of latitude/longitude objects. An active, foreign or missing ID returns 404.
 On Android, open **View activity** after saving or **My Activity** in Profile.
+
+## Garbage evidence
+
+Each garbage photograph has its own UUID and a required foreign key to a Plog.
+Use the Plog's user association to determine ownership. The metadata records
+the private storage key, media type, byte count, SHA-256 digest and upload
+time. The digest lets an upload retry verify that it refers to the same bytes.
+Reverting `CreateGarbageEvidence` removes the metadata table. Image bytes are
+managed by the storage provider. [M4.1 data model](https://github.com/devBuildersunique/ploggr/issues/28)

@@ -2,12 +2,14 @@ import type { DataSourceOptions } from 'typeorm';
 import { validateDatabaseEnvironment, type DatabaseEnvironment } from '../config/environment';
 import { loadEnvironmentFile } from '../config/environment-file';
 import { AuthSession, RefreshCredential } from '../modules/auth/session.entity';
+import { GarbageEvidence } from '../modules/evidence/garbage-evidence.entity';
 import { Plog, PlogRoutePoint } from '../modules/plogs/plog.entity';
 import { User } from '../modules/users/user.entity';
 import { VerifyPostgis1794873600000 } from './migrations/1794873600000-VerifyPostgis';
 import { CreateUsers1795018043320 } from './migrations/1795018043320-CreateUsers';
 import { CreateAuthSessions1795020000000 } from './migrations/1795020000000-CreateAuthSessions';
 import { CreatePlogs1795171000000 } from './migrations/1795171000000-CreatePlogs';
+import { CreateGarbageEvidence1795172900000 } from './migrations/1795172900000-CreateGarbageEvidence';
 
 export function loadDatabaseEnvironment(envFile?: string): DatabaseEnvironment {
   loadEnvironmentFile(envFile);
@@ -29,9 +31,10 @@ export function createDatabaseOptions(env: DatabaseEnvironment): DataSourceOptio
     migrationsRun: false,
     uuidExtension: 'pgcrypto', // Selects PostgreSQL's built-in gen_random_uuid().
     installExtensions: false,
-    entities: [User, AuthSession, RefreshCredential, Plog, PlogRoutePoint],
+    entities: [User, AuthSession, RefreshCredential, Plog, PlogRoutePoint, GarbageEvidence],
     migrations: [
       VerifyPostgis1794873600000, CreateUsers1795018043320, CreateAuthSessions1795020000000, CreatePlogs1795171000000,
+      CreateGarbageEvidence1795172900000,
     ],
     migrationsTableName: 'migrations',
     logging: false,

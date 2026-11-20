@@ -11,6 +11,9 @@ import { VerifyPostgis1794873600000 } from '../src/database/migrations/179487360
 import { CreateUsers1795018043320 } from '../src/database/migrations/1795018043320-CreateUsers';
 import { CreateAuthSessions1795020000000 } from '../src/database/migrations/1795020000000-CreateAuthSessions';
 import { CreatePlogs1795171000000 } from '../src/database/migrations/1795171000000-CreatePlogs';
+import { CreateGarbageEvidence1795172900000 } from '../src/database/migrations/1795172900000-CreateGarbageEvidence';
+import { GarbageEvidence } from '../src/modules/evidence/garbage-evidence.entity';
+import { Plog } from '../src/modules/plogs/plog.entity';
 import { AuthSession } from '../src/modules/auth/session.entity';
 import { User } from '../src/modules/users/user.entity';
 import { UsersService } from '../src/modules/users/users.service';
@@ -51,7 +54,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
       VerifyPostgis1794873600000.name,
       CreateUsers1795018043320.name,
       CreateAuthSessions1795020000000.name,
-      CreatePlogs1795171000000.name,
+      CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
     expect(await source.runMigrations()).toHaveLength(0);
@@ -59,12 +62,20 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     const owner = await source.getRepository(User).save({ email: 'migration@example.test', passwordHash: 'test-hash' });
     const sessions = source.getRepository(AuthSession);
     const session = await sessions.save({ user: owner });
+    const plogs = source.getRepository(Plog);
+    const track = await plogs.save({ user: owner });
+    await source.undoLastMigration();
+    expect(await source.query("SELECT to_regclass('public.garbage_evidence') AS evidence")).toEqual([{ evidence: null }]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateGarbageEvidence1795172900000.name]);
+    expect(await plogs.existsBy({ id: track.id, user: { id: owner.id } })).toBe(true);
+    await source.undoLastMigration();
     await source.undoLastMigration();
     expect(await source.query(`SELECT to_regclass('public.plogs') AS plogs,
       to_regclass('public.plog_route_points') AS points`)).toEqual([{ plogs: null, points: null }]);
     expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
-    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreatePlogs1795171000000.name]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name]);
     expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
+    await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
     expect(await source.query("SELECT to_regclass('public.auth_sessions') AS sessions")).toEqual([{ sessions: null }]);
@@ -77,7 +88,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     expect((await checkDatabase(source)).postgis).toContain('POSTGIS=');
     expect(await source.showMigrations()).toBe(true);
     expect((await source.runMigrations()).map(({ name }) => name)).toEqual([
-      CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name, CreatePlogs1795171000000.name,
+      CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name, CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
   });
@@ -93,9 +104,28 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
         ) ORDER BY c.relname
     `);
     expect(tables.map(({ name }: { name: string }) => name)).toEqual([
-      'auth_refresh_tokens', 'auth_sessions', 'migrations', 'plog_route_points', 'plogs', 'users',
+      'auth_refresh_tokens', 'auth_sessions', 'garbage_evidence', 'migrations', 'plog_route_points', 'plogs', 'users',
     ]);
     expect((await source.driver.createSchemaBuilder().log()).upQueries).toEqual([]);
+  });
+
+  it('persists multiple photo references with ownership through the Plog', async () => {
+    const owner = await source.getRepository(User).save({ email: 'evidence-owner@example.test', passwordHash: 'test-hash' });
+    const time = new Date();
+    const plog = await source.getRepository(Plog).save({ user: owner, status: 'completed', startedAt: time, endedAt: time });
+    const repo = source.getRepository(GarbageEvidence);
+    const photo = { plog, mediaType: 'image/jpeg', byteSize: 234, sha256: 'ab'.repeat(32) };
+    const first = await repo.save({ ...photo, storageKey: randomUUID() });
+    await repo.save({ ...photo, storageKey: randomUUID() });
+    const owned = { plog: { id: plog.id, user: { id: owner.id } } };
+    expect(await repo.countBy(owned)).toBe(2);
+    expect(await repo.findOneBy({ ...owned, id: first.id })).toMatchObject({
+      mediaType: 'image/jpeg', byteSize: 234, storageKey: first.storageKey, createdAt: expect.any(Date), uploadedAt: null,
+    });
+    await expect(repo.insert({ ...photo, storageKey: first.storageKey })).rejects.toMatchObject({ code: '23505' });
+    await expect(repo.insert({ ...photo, storageKey: randomUUID(), plog: { id: randomUUID() } })).rejects.toMatchObject({ code: '23503' });
+    await source.getRepository(Plog).delete(plog.id);
+    expect(await repo.existsBy({ id: first.id })).toBe(false);
   });
 
   authContract(() => source);
