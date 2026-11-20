@@ -16,6 +16,7 @@ import { User } from '../src/modules/users/user.entity';
 import { UsersService } from '../src/modules/users/users.service';
 import request from 'supertest';
 import { plogContract } from './plog.contract';
+import { plogHttpContract } from './plog-http.contract';
 
 describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
   let source: DataSource;
@@ -99,6 +100,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
 
   authContract(() => source);
   plogContract(() => source);
+  plogHttpContract();
 
   describe('user identity persistence', () => {
     let module: TestingModule;

@@ -342,3 +342,18 @@ spent-token rows are deleted together on revocation or user deletion.
 Run `npm run test:database` for the HTTP and PostgreSQL contract. Reverting
 CreateAuthSessions signs out every device by dropping both session tables.
 User identities and password hashes survive that rollback.
+
+## Plog lifecycle API
+
+All Plog operations require an M2 bearer token. `POST /api/plogs` starts an
+activity and returns HTTP 201. A concurrent or repeated start returns 409.
+`GET /api/plogs/active` returns an object with a `plog` field containing the
+owner's active activity or null. Each summary includes id, userId, status,
+startedAt, endedAt, durationSeconds and distanceMeters.
+
+`POST /api/plogs/:id/finish` accepts endedAt (ISO 8601 with timezone),
+durationSeconds, distanceMeters and an ordered route of up to 20,000 objects
+with numeric latitude and longitude. An empty route is valid. The server locks
+the owned activity and commits the measurements and fixes in one transaction.
+An identical retry returns the saved result (200), a different completion
+returns 409, and an unknown or foreign activity returns 404.

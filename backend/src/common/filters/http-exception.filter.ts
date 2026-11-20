@@ -26,7 +26,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     if (statusCode >= 500) {
       // Driver errors can carry bound credential parameters.
-      this.logger.error(request.path.toLowerCase().startsWith('/api/auth/') ? 'Authentication request failed' : exception);
+      const path = request.path.toLowerCase();
+      if (path.startsWith('/api/auth/')) this.logger.error('Authentication request failed');
+      else if (/^\/api\/plogs(?:\/|$)/.test(path)) this.logger.error('Plog request failed');
+      else this.logger.error(exception);
     } else if (exception instanceof HttpException) {
       const body = exception.getResponse();
       message = typeof body === 'string'
