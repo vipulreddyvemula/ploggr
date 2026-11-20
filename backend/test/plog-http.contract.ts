@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { EvidenceStorage } from '../src/modules/evidence/evidence-storage';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 
@@ -15,6 +16,17 @@ export function plogHttpContract() {
       await app.init();
     });
     afterAll(async () => { await app?.close(); });
+
+    it('stores and reads an image privately in the isolated S3 bucket', async () => {
+      const storage = app.get(EvidenceStorage);
+      const key = 'evidence/' + randomUUID();
+      const bytes = Buffer.from('private storage contract');
+      await storage.put(key, bytes, 'application/octet-stream');
+      expect(await storage.read(key)).toEqual(bytes);
+      const anonymous = await fetch(process.env.EVIDENCE_S3_ENDPOINT + '/' + process.env.EVIDENCE_S3_BUCKET + '/' + key);
+      expect([401, 403]).toContain(anonymous.status);
+      await expect(storage.read('evidence/' + randomUUID())).rejects.toMatchObject({ status: 404 });
+    });
 
     it('authenticates starts and finishes, scopes ownership, and safely retries a lost finish response', async () => {
       const http = request(app.getHttpServer());

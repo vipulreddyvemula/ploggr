@@ -25,6 +25,8 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     DB_HOST: '127.0.0.1', DB_PORT: '0', DB_NAME: 'ploggr_test',
     DB_USER: 'ploggr_test', DB_PASSWORD: randomBytes(24).toString('hex'),
     AUTH_SECRET: randomBytes(32).toString('hex'),
+    EVIDENCE_S3_BUCKET: 'ploggr-test-evidence', EVIDENCE_S3_PORT: '0',
+    EVIDENCE_S3_ACCESS_KEY: randomBytes(16).toString('hex'), EVIDENCE_S3_SECRET_KEY: randomBytes(32).toString('hex'),
     POSTGRES_PASSWORD: randomBytes(24).toString('hex'),
   };
   const exec = (cmd, args, options) => run(cmd, args, { cwd: backend, env, signal, ...options });
@@ -38,6 +40,9 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     const address = await compose(['port', 'database', '5432'], { capture: true });
     env.DB_PORT = address.trim().split(':').at(-1);
     assert.match(env.DB_PORT, /^\d+$/);
+    const storageAddress = await compose(['port', 'storage', '8333'], { capture: true });
+    env.EVIDENCE_S3_PORT = storageAddress.trim().split(':').at(-1);
+    env.EVIDENCE_S3_ENDPOINT = 'http://127.0.0.1:' + env.EVIDENCE_S3_PORT;
     await npm('db:check');
     await exec('npm', ['exec', '--', 'jest', '--config', 'jest.database.config.mjs', '--runInBand']);
     await npm('build');

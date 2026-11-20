@@ -373,3 +373,14 @@ the private storage key, media type, byte count, SHA-256 digest and upload
 time. The digest lets an upload retry verify that it refers to the same bytes.
 Reverting `CreateGarbageEvidence` removes the metadata table. Image bytes are
 managed by the storage provider. [M4.1 data model](https://github.com/devBuildersunique/ploggr/issues/28)
+
+### Private image storage
+
+Run `make setup` to generate local credentials, then `make api`. Compose starts
+SeaweedFS with a named volume and publishes its S3 port on loopback. The backend
+uses the private bucket named by `EVIDENCE_S3_BUCKET`. For a managed S3 bucket,
+set the bucket and region (`EVIDENCE_S3_REGION`), enable block public access,
+and grant the backend workload role GetObject and PutObject on its evidence
+prefix. For another S3-compatible service, set `EVIDENCE_S3_ENDPOINT` and the
+backend-only `EVIDENCE_S3_ACCESS_KEY` and `EVIDENCE_S3_SECRET_KEY`. Use HTTPS
+in production. Android receives image bytes through the authenticated API.

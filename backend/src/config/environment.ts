@@ -6,7 +6,39 @@ export interface DatabaseEnvironment {
   DB_PASSWORD: string;
 }
 
+interface StorageEnvironment {
+  bucket: string;
+  region: string;
+  endpoint?: string;
+  credentials?: { accessKeyId: string; secretAccessKey: string };
+}
+
+function storageEnvironment(config: Record<string, unknown>): StorageEnvironment | undefined {
+  const { EVIDENCE_S3_BUCKET: bucket, EVIDENCE_S3_ENDPOINT: endpoint, EVIDENCE_S3_REGION: region,
+    EVIDENCE_S3_ACCESS_KEY: accessKeyId, EVIDENCE_S3_SECRET_KEY: secretAccessKey } = config;
+  if ([bucket, endpoint, region, accessKeyId, secretAccessKey].every(value => value === undefined)) return undefined;
+  if (typeof bucket !== 'string' || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+    throw new Error('Set a valid EVIDENCE_S3_BUCKET');
+  }
+  if (region !== undefined && (typeof region !== 'string' || !region.trim())) throw new Error('Invalid EVIDENCE_S3_REGION');
+  if (endpoint !== undefined) {
+    if (typeof endpoint !== 'string' || !URL.canParse(endpoint)) throw new Error('Invalid EVIDENCE_S3_ENDPOINT');
+    const url = new URL(endpoint);
+    if (url.username || url.password || url.search || url.hash || !['http:', 'https:'].includes(url.protocol) ||
+      (config.NODE_ENV === 'production' && url.protocol !== 'https:')) throw new Error('Invalid EVIDENCE_S3_ENDPOINT');
+  }
+  let credentials;
+  if (accessKeyId !== undefined || secretAccessKey !== undefined) {
+    if (typeof accessKeyId !== 'string' || !accessKeyId.trim() || typeof secretAccessKey !== 'string' || !secretAccessKey.trim()) {
+      throw new Error('Configure both evidence storage credentials or use the workload role');
+    }
+    credentials = { accessKeyId, secretAccessKey };
+  }
+  return { bucket, region: region ?? 'us-east-1', endpoint, credentials };
+}
+
 export interface Environment extends DatabaseEnvironment {
+  evidenceStorage?: StorageEnvironment;
   NODE_ENV: 'development' | 'test' | 'production';
   HOST: string;
   AUTH_SECRET: string;
@@ -48,6 +80,7 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
   }
 
   return {
+    evidenceStorage: storageEnvironment(config),
     AUTH_ACCESS_TTL_SECONDS: ttl,
     AUTH_SECRET: secret,
     NODE_ENV: nodeEnv,

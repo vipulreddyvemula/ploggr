@@ -8,6 +8,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { EvidenceModule } from './modules/evidence/evidence.module';
 import { PlogsModule } from './modules/plogs/plogs.module';
 
 @Module({
@@ -23,6 +24,7 @@ import { PlogsModule } from './modules/plogs/plogs.module';
     UsersModule,
     AuthModule,
     PlogsModule,
+    EvidenceModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
