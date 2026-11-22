@@ -75,15 +75,15 @@ class SessionController extends Notifier<SessionState> {
   }
 
   Future<void> signup(String email, String password) =>
-      _signIn(email, password, signup: true);
+      _signIn((api) => api.signup(email, password));
   Future<void> login(String email, String password) =>
-      _signIn(email, password, signup: false);
+      _signIn((api) => api.login(email, password));
 
+  Future<void> external(String code, String verifier) =>
+      _signIn((api) => api.external(code, verifier));
   Future<void> _signIn(
-    String email,
-    String password, {
-    required bool signup,
-  }) async {
+    Future<SessionBundle> Function(SessionApi) authenticate,
+  ) async {
     final api = _api;
     if (api == null || _store == null) {
       throw StateError('Mobile authentication is unavailable');
@@ -98,9 +98,7 @@ class SessionController extends Notifier<SessionState> {
     try {
       final SessionBundle bundle;
       try {
-        bundle = signup
-            ? await api.signup(email, password)
-            : await api.login(email, password);
+        bundle = await authenticate(api);
       } catch (_) {
         if (generation == _generation) {
           state = (phase: SessionPhase.signedOut, user: null);

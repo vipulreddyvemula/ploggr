@@ -8,25 +8,35 @@ import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/bottom_navigation.dart';
 import '../plogging/application/session_controller.dart';
 import '../profile/profile_controller.dart';
+import '../community/field_data.dart';
+import '../spots/spot_api.dart';
+import 'activity_overview.dart';
+import '../plogging/data/plog_drafts.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final impact = ref.watch(impactProvider);
-    final session = ref.watch(sessionProvider);
     final live = ref.watch(authModeProvider) == AuthMode.live;
+    final impact = live ? null : ref.watch(impactProvider);
+    final session = live ? null : ref.watch(sessionProvider);
+    final totals = live ? ref.watch(totalsProvider).value : null;
     final livePhase = live
         ? ref.watch(activeTrackProvider.select((s) => s.phase))
         : TrackPhase.idle;
+    final draft = live ? ref.watch(resumablePlogProvider).value : false;
     final resume = live
-        ? ![
-            TrackPhase.idle,
-            TrackPhase.completed,
-            TrackPhase.startError,
-          ].contains(livePhase)
-        : session.active;
-    final name = ref.watch(profileProvider).split(' ').first;
+        ? (livePhase == TrackPhase.idle && draft == true) ||
+              ![
+                TrackPhase.idle,
+                TrackPhase.completed,
+                TrackPhase.startError,
+              ].contains(livePhase)
+        : session!.active;
+    final profile = live ? ref.watch(fieldData('profile')).value as Map? : null;
+    final name = live
+        ? (profile?['name'] as String?)
+        : ref.watch(profileProvider).split(' ').first;
     return Scaffold(
       bottomNavigationBar: const BottomNavBar(),
       body: SafeArea(
@@ -41,18 +51,26 @@ class HomePage extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Hi, $name! 👋',
+                        name == null ? 'Hi! 👋' : 'Hi, $name! 👋',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: AppText.title.copyWith(fontSize: 23),
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Notifications',
-                      onPressed: () => previewNotice(
-                        context,
-                        'A little green inspiration',
-                        'Your next clean-up is waiting! Explore nearby events and join a sample community drive. Notifications are a preview.',
+                      tooltip: live ? 'My Activity' : 'Notifications',
+                      onPressed: live
+                          ? () => openPage(context, AppRoutes.activity)
+                          : () => previewNotice(
+                              context,
+                              'A little green inspiration',
+                              'Your next clean-up is waiting! Explore nearby events and join a sample community drive. Notifications are a preview.',
+                            ),
+                      icon: Icon(
+                        live
+                            ? Icons.history_rounded
+                            : Icons.notifications_none_rounded,
                       ),
-                      icon: const Icon(Icons.notifications_none_rounded),
                     ),
                   ],
                 ),
@@ -74,12 +92,18 @@ class HomePage extends ConsumerWidget {
                             const Text('Your Impact', style: AppText.label),
                             const SizedBox(height: 3),
                             Text(
-                              '${impact.kg.toStringAsFixed(1)} kg',
+                              live
+                                  ? (totals == null
+                                        ? '—'
+                                        : formatWalkDistance(totals.meters))
+                                  : '${impact!.kg.toStringAsFixed(1)} kg',
                               style: AppText.hero,
                             ),
                             const SizedBox(height: 3),
-                            const Text(
-                              'of litter collected',
+                            Text(
+                              live
+                                  ? 'walked on completed Plogs'
+                                  : 'of litter collected',
                               style: AppText.body,
                             ),
                           ],
@@ -89,38 +113,41 @@ class HomePage extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: StatTile(
-                        value: '${impact.sessions}',
-                        label: 'Sessions',
-                        icon: Icons.route_rounded,
-                        onTap: () => openPage(context, AppRoutes.activity),
+                if (live)
+                  const AccountStats()
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: StatTile(
+                          value: '${impact!.sessions}',
+                          label: 'Sessions',
+                          icon: Icons.route_rounded,
+                          onTap: () => openPage(context, AppRoutes.activity),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: StatTile(
-                        value: '3',
-                        label: 'Challenges',
-                        icon: Icons.emoji_events_outlined,
-                        onTap: () => openPage(context, AppRoutes.challenges),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: StatTile(
+                          value: '3',
+                          label: 'Challenges',
+                          icon: Icons.emoji_events_outlined,
+                          onTap: () => openPage(context, AppRoutes.challenges),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: StatTile(
-                        value: '5',
-                        label: 'Badges',
-                        icon: Icons.workspace_premium_rounded,
-                        color: AppColors.gold,
-                        onTap: () => openPage(context, AppRoutes.badges),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: StatTile(
+                          value: '5',
+                          label: 'Badges',
+                          icon: Icons.workspace_premium_rounded,
+                          color: AppColors.gold,
+                          onTap: () => openPage(context, AppRoutes.badges),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 const SizedBox(height: 15),
                 PrimaryButton(
                   resume ? 'Resume Plog Session' : 'Start Plog Session',
@@ -128,77 +155,92 @@ class HomePage extends ConsumerWidget {
                   onPressed: () {
                     if (live) {
                       ref.read(activeTrackProvider.notifier).startOrResume();
-                    } else if (!session.active) {
+                    } else if (!session!.active) {
                       ref.read(sessionProvider.notifier).start();
                     }
                     openPage(context, AppRoutes.session);
                   },
                 ),
                 const SizedBox(height: 10),
-                PrimaryButton(
-                  'Scan Litter',
-                  icon: Icons.qr_code_scanner_rounded,
-                  onPressed: () => openPage(context, AppRoutes.scan),
-                ),
-                const SectionTitle('Ongoing Challenge'),
-                EcoCard(
-                  onTap: () => openPage(context, AppRoutes.challenges),
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: const BoxDecoration(
-                          color: AppColors.paleGreen,
-                          borderRadius: AppRadius.small,
-                        ),
-                        child: const Icon(
-                          Icons.directions_run_rounded,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Campus Clean-up', style: AppText.label),
-                            const SizedBox(height: 3),
-                            const Text(
-                              'Collect 20 kg by Nov 22',
-                              style: AppText.caption,
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: AppRadius.pill,
-                              child: LinearProgressIndicator(
-                                value: (impact.kg / 20).clamp(0, 1),
-                                minHeight: 6,
-                                backgroundColor: AppColors.paleGreen,
-                                color: AppColors.leaf,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${impact.kg.toStringAsFixed(1)} / 20 kg',
-                              style: AppText.caption.copyWith(fontSize: 10),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right_rounded, size: 20),
-                    ],
+                if (live)
+                  OutlinedButton.icon(
+                    onPressed: () => openPage(context, AppRoutes.report),
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('Report litter'),
+                  )
+                else
+                  PrimaryButton(
+                    'Scan Litter',
+                    icon: Icons.qr_code_scanner_rounded,
+                    onPressed: () => openPage(context, AppRoutes.scan),
                   ),
-                ),
+                if (live) ...[
+                  const SectionTitle('Latest report'),
+                  const _LatestReport(),
+                ] else ...[
+                  const SectionTitle('Ongoing Challenge'),
+                  EcoCard(
+                    onTap: () => openPage(context, AppRoutes.challenges),
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: const BoxDecoration(
+                            color: AppColors.paleGreen,
+                            borderRadius: AppRadius.small,
+                          ),
+                          child: const Icon(
+                            Icons.directions_run_rounded,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Campus Clean-up',
+                                style: AppText.label,
+                              ),
+                              const SizedBox(height: 3),
+                              const Text(
+                                'Collect 20 kg by Nov 22',
+                                style: AppText.caption,
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: AppRadius.pill,
+                                child: LinearProgressIndicator(
+                                  value: (impact!.kg / 20).clamp(0, 1),
+                                  minHeight: 6,
+                                  backgroundColor: AppColors.paleGreen,
+                                  color: AppColors.leaf,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${impact.kg.toStringAsFixed(1)} / 20 kg',
+                                style: AppText.caption.copyWith(fontSize: 10),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, size: 20),
+                      ],
+                    ),
+                  ),
+                ],
                 const SectionTitle('Quick Actions'),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _quick(
                       context,
-                      'Nearby\nClean-ups',
+                      live ? 'My\nreports' : 'Nearby\nClean-ups',
                       Icons.location_on_outlined,
-                      AppRoutes.cleanups,
+                      live ? AppRoutes.saved : AppRoutes.cleanups,
                     ),
                     const SizedBox(width: 7),
                     _quick(
@@ -224,7 +266,7 @@ class HomePage extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                const PreviewNote(),
+                if (!live) const PreviewNote(),
               ],
             ),
           ),
@@ -259,4 +301,64 @@ class HomePage extends ConsumerWidget {
       ),
     ),
   );
+}
+
+class _LatestReport extends ConsumerWidget {
+  const _LatestReport();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reports = ref.watch(mySpotsProvider(null));
+    final latest = reports.value?.items.firstOrNull;
+    final title = latest != null
+        ? '${latest.category} litter'
+        : reports.isLoading
+        ? 'Loading your reports…'
+        : reports.hasError
+        ? 'Could not load reports'
+        : 'No reports yet';
+    final detail = latest != null
+        ? latest.statusLabel
+        : reports.hasError
+        ? 'Tap to retry'
+        : 'Photograph litter to mark a spot on the map.';
+    return EcoCard(
+      onTap: () {
+        if (reports.hasError) {
+          ref.invalidate(mySpotsProvider(null));
+        } else {
+          openPage(
+            context,
+            latest == null ? AppRoutes.report : '/spots/${latest.id}',
+          );
+        }
+      },
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: const BoxDecoration(
+              color: AppColors.paleGreen,
+              borderRadius: AppRadius.small,
+            ),
+            child: const Icon(
+              Icons.location_on_outlined,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppText.label),
+                if (!reports.isLoading) Text(detail, style: AppText.caption),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, size: 20),
+        ],
+      ),
+    );
+  }
 }

@@ -47,12 +47,15 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     await exec('npm', ['exec', '--', 'jest', '--config', 'jest.database.config.mjs', '--runInBand']);
     await npm('build');
     await npm('migration:revert:prod');
+    await npm('migration:revert:prod');
     const rolledBack = await npm('migration:show:prod', { capture: true });
     assert.match(rolledBack, /\[X\].*VerifyPostgis/);
     assert.match(rolledBack, /\[X\].*CreateUsers/);
     assert.match(rolledBack, /\[X\].*CreateAuthSessions/);
     assert.match(rolledBack, /\[X\].*CreatePlogs/);
-    assert.match(rolledBack, /\[ \].*CreateGarbageEvidence/);
+    assert.match(rolledBack, /\[X\].*CreateGarbageEvidence/);
+    assert.match(rolledBack, /\[ \].*CreateLitterReports/);
+    assert.match(rolledBack, /\[ \].*FieldExperience/);
     await npm('migration:run:prod');
     await npm('db:check:prod');
 
@@ -64,8 +67,10 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     assert.match(applied, /\[X\].*CreateAuthSessions/);
     assert.match(applied, /\[X\].*CreatePlogs/);
     assert.match(applied, /\[X\].*CreateGarbageEvidence/);
+    assert.match(applied, /\[X\].*CreateLitterReports/);
     await npm('db:check:prod');
 
+    assert.match(applied, /\[X\].*FieldExperience/);
     for (const overrides of [{ DB_PASSWORD: 'incorrect_password' }, { DB_PORT: await unusedPort() }]) {
       const output = await exec(process.execPath, ['dist/main.js'], {
         env: { ...env, ...overrides }, capture: true, expectedExit: 1, timeout: 30_000,

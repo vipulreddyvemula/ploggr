@@ -37,8 +37,12 @@ void main() {
       );
       Future<void> tap(String label) async {
         final target = find.text(label);
-        await tester.ensureVisible(target);
-        await tester.tap(target);
+        // Wait for form validation and Android keyboard insets before choosing a tap position.
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        await Scrollable.ensureVisible(tester.element(target), alignment: 0.5);
+        await tester.pumpAndSettle();
+        await tester.tap(target.hitTestable());
         await tester.pumpAndSettle();
       }
 

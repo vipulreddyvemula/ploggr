@@ -8,7 +8,7 @@ import { GarbageEvidence } from './garbage-evidence.entity';
 
 export interface PhotoUpload { buffer: Buffer; mimetype: string }
 
-async function validatePhoto(file?: PhotoUpload) {
+export async function validatePhoto(file?: PhotoUpload) {
   if (!file?.buffer.length) throw new BadRequestException('A garbage photo is required');
   const jpeg = file.buffer.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
   const png = file.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));

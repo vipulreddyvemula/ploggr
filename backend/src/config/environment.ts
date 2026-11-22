@@ -44,6 +44,8 @@ export interface Environment extends DatabaseEnvironment {
   AUTH_SECRET: string;
   AUTH_ACCESS_TTL_SECONDS: number;
   PORT: number;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
 }
 
 function parsePort(value: unknown, name: 'PORT' | 'DB_PORT', fallback: number): number {
@@ -79,6 +81,15 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     throw new Error('AUTH_ACCESS_TTL_SECONDS must be an integer from 1 through 900');
   }
 
+  const geminiApiKey =
+    typeof config.GEMINI_API_KEY === 'string' && config.GEMINI_API_KEY.trim()
+      ? config.GEMINI_API_KEY.trim()
+      : undefined;
+  const geminiModel =
+    typeof config.GEMINI_MODEL === 'string' && config.GEMINI_MODEL.trim()
+      ? config.GEMINI_MODEL.trim()
+      : undefined;
+
   return {
     evidenceStorage: storageEnvironment(config),
     AUTH_ACCESS_TTL_SECONDS: ttl,
@@ -86,6 +97,8 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     NODE_ENV: nodeEnv,
     HOST: host.trim(),
     PORT: port,
+    GEMINI_API_KEY: geminiApiKey,
+    GEMINI_MODEL: geminiModel,
     ...database,
   };
 }

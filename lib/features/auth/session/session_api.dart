@@ -69,6 +69,24 @@ class SessionApi {
     }
   }
 
+  Future<Map> options() async => (await _client.get<Map>('auth/options')).data!;
+  Future<void> requestReset(String email) async {
+    await _post('password/request', {'email': email});
+  }
+
+  Future<void> reset(String email, String code, String password) async {
+    await _post('password/reset', {
+      'email': email,
+      'code': code,
+      'password': password,
+    });
+  }
+
+  Future<SessionBundle> external(String code, String verifier) async =>
+      SessionBundle.fromJson(
+        await _post('external', {'code': code, 'verifier': verifier}),
+      );
+
   Future<SessionBundle> signup(String email, String password) async =>
       SessionBundle.fromJson(
         await _post('signup', {'email': email, 'password': password}),

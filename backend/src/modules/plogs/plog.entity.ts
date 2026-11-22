@@ -31,6 +31,9 @@ export class Plog {
   @Column('integer', { name: 'duration_seconds', default: 0 })
   durationSeconds!: number;
 
+  @Column('integer', { name:'segment_starts', array:true, default:()=>"'{}'" })
+  segmentStarts!: number[];
+
   @Column('double precision', { name: 'distance_meters', default: 0 })
   distanceMeters!: number;
 }

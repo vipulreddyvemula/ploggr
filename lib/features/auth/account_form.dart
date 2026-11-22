@@ -1,3 +1,4 @@
+import 'account_access.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -70,79 +71,112 @@ class _AccountFormState extends ConsumerState<AccountForm> {
     return AppPage(
       title: '',
       backTo: signup ? AppRoutes.login : AppRoutes.onboarding,
-      child: Form(
-        key: _form,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Center(child: PloggrLogo(size: 70)),
-            const SizedBox(height: 24),
-            Text(signup ? 'Sign Up' : 'Welcome back!', style: AppText.title),
-            const SizedBox(height: 24),
-            AppField(
-              label: 'Email',
-              icon: Icons.mail_outline_rounded,
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                final email = (value ?? '').trim();
-                return email.runes.length <= 254 &&
-                        RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)
-                    ? null
-                    : 'Enter a valid email address';
-              },
-            ),
-            const SizedBox(height: 14),
-            AppField(
-              label: 'Password',
-              icon: Icons.lock_outline_rounded,
-              password: true,
-              controller: _password,
-              textInputAction: signup
-                  ? TextInputAction.next
-                  : TextInputAction.done,
-              onSubmitted: signup ? null : (_) => _submit(),
-              validator: (value) {
-                final length = (value ?? '').runes.length;
-                if (length > 128) return 'Use at most 128 characters';
-                if (signup && length < 15) return 'Use at least 15 characters';
-                return length == 0 ? 'Enter your password' : null;
-              },
-            ),
-            if (signup) ...[
+      child: AutofillGroup(
+        child: Form(
+          key: _form,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (signup) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Sign Up',
+                  textAlign: TextAlign.center,
+                  style: AppText.title,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Create your ploggr account',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 30),
+              ] else ...[
+                const Center(child: PloggrLogo(size: 70)),
+                const SizedBox(height: 35),
+                const Text('Welcome back!', style: AppText.title),
+                const SizedBox(height: 6),
+                const Text(
+                  'Log in to continue your\nplogging journey 🌱',
+                  style: AppText.body,
+                ),
+                const SizedBox(height: 24),
+              ],
+              AppField(
+                label: 'Email',
+                autofillHints: const [AutofillHints.email],
+                icon: Icons.mail_outline_rounded,
+                controller: _email,
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  final email = (value ?? '').trim();
+                  return email.runes.length <= 254 &&
+                          RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)
+                      ? null
+                      : 'Enter a valid email address';
+                },
+              ),
               const SizedBox(height: 14),
               AppField(
-                label: 'Confirm Password',
+                label: 'Password',
+                helper: signup
+                    ? 'Use 15–128 characters. A passphrase works well.'
+                    : null,
+                autofillHints: [
+                  signup ? AutofillHints.newPassword : AutofillHints.password,
+                ],
                 icon: Icons.lock_outline_rounded,
                 password: true,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _submit(),
-                validator: (value) =>
-                    value == _password.text ? null : 'Passwords must match',
+                controller: _password,
+                textInputAction: signup
+                    ? TextInputAction.next
+                    : TextInputAction.done,
+                onSubmitted: signup ? null : (_) => _submit(),
+                validator: (value) {
+                  final length = (value ?? '').runes.length;
+                  if (length > 128) return 'Use at most 128 characters';
+                  if (signup && length < 15) {
+                    return 'Use at least 15 characters';
+                  }
+                  return length == 0 ? 'Enter your password' : null;
+                },
+              ),
+              if (signup) ...[
+                const SizedBox(height: 14),
+                AppField(
+                  label: 'Confirm Password',
+                  autofillHints: const [AutofillHints.newPassword],
+                  icon: Icons.lock_outline_rounded,
+                  password: true,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  validator: (value) =>
+                      value == _password.text ? null : 'Passwords must match',
+                ),
+              ],
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Semantics(liveRegion: true, child: Text(_error!)),
+                ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                _busy
+                    ? (signup ? 'Creating account…' : 'Logging in…')
+                    : (signup ? 'Create Account' : 'Login'),
+                onPressed: ready && !_busy ? _submit : null,
+              ),
+              AccountMethods(email: () => _email.text, login: !signup),
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => switchPage(
+                        context,
+                        signup ? AppRoutes.login : AppRoutes.signup,
+                      ),
+                child: Text(signup ? 'Login' : 'Sign up'),
               ),
             ],
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Semantics(liveRegion: true, child: Text(_error!)),
-              ),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              _busy
-                  ? (signup ? 'Creating account…' : 'Logging in…')
-                  : (signup ? 'Create Account' : 'Login'),
-              onPressed: ready && !_busy ? _submit : null,
-            ),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => switchPage(
-                      context,
-                      signup ? AppRoutes.login : AppRoutes.signup,
-                    ),
-              child: Text(signup ? 'Login' : 'Sign up'),
-            ),
-          ],
+          ),
         ),
       ),
     );

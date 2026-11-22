@@ -12,6 +12,10 @@ export class PlogsController {
   @Header('Cache-Control', 'no-store')
   start(@Req() req: AuthenticatedRequest) { return this.plogs.start(req.user.id); }
 
+  @Get('summary')
+  @Header('Cache-Control','private, no-store')
+  totals(@Req() req: AuthenticatedRequest) { return this.plogs.totals(req.user.id); }
+
   @Get('active')
   @Header('Cache-Control', 'no-store')
   active(@Req() req: AuthenticatedRequest) { return this.plogs.active(req.user.id); }

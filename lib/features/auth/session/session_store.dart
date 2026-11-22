@@ -40,6 +40,10 @@ class SessionStore {
     ),
   );
 
+  Future<bool> seenOnboarding() async =>
+      await _storage.read(key: 'ploggr.onboarded') == 'yes';
+  Future<void> markOnboarding() =>
+      _storage.write(key: 'ploggr.onboarded', value: 'yes');
   Future<StoredSession?> read() async {
     final value = await _storage.read(key: _key);
     return value == null ? null : StoredSession.decode(value);

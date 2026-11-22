@@ -1,16 +1,88 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ploggr/core/config/app_config.dart';
+import 'package:ploggr/core/config/app_config_provider.dart';
 import 'package:ploggr/features/auth/session/session_api.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
+import 'package:ploggr/features/auth/session/session_store.dart';
 import 'package:ploggr/routes/app_router.dart';
 import 'package:ploggr/routes/auth_navigation.dart';
-import 'package:ploggr/features/auth/session/session_store.dart';
 
 import 'live_app_harness.dart';
 import 'session_fakes.dart';
 
 void main() {
+  testWidgets('a new account starts on Home after explicit sign-out', (
+    tester,
+  ) async {
+    final container = await openLiveApp(
+      tester,
+      '/profile/activity/old-account',
+      MemoryStore()..value = StoredSession(token),
+      FakeApi(),
+    );
+    final sessions = container.read(sessionControllerProvider.notifier);
+    final router = container.read(appRouterProvider);
+    await sessions.logout();
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/login');
+    await sessions.signup('another@example.test', 'another-account-password');
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/home');
+  });
+
+  testWidgets(
+    'a returning signed-out user reaches login and a signed-in activity link has a list to return to',
+    (tester) async {
+      final signedOut = await openLiveApp(
+        tester,
+        '/',
+        MemoryStore()..onboarded = true,
+        FakeApi(),
+      );
+      expect(
+        signedOut
+            .read(appRouterProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .path,
+        '/login',
+      );
+      await tester.pumpWidget(const SizedBox());
+      final signedIn = await openLiveApp(
+        tester,
+        '/profile/activity/field-test',
+        MemoryStore()..value = StoredSession(token),
+        FakeApi(),
+      );
+      final router = signedIn.read(appRouterProvider);
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/profile/activity/field-test',
+      );
+      expect(router.canPop(), isTrue);
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/profile/activity',
+      );
+    },
+  );
+  testWidgets('Android without an API URL requires configuration', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [appConfigProvider.overrideWithValue(AppConfig.fromValues())],
+    );
+    addTearDown(container.dispose);
+    expect(container.read(authModeProvider), AuthMode.unavailable);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets(
     'fresh live install opens onboarding and does not offer a guest path',
     (tester) async {

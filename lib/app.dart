@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'features/spots/observation_sync.dart';
+import 'features/spots/spot_api.dart';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +27,12 @@ class PloggrApp extends ConsumerStatefulWidget {
 class _PloggrAppState extends ConsumerState<PloggrApp> {
   late final AppLifecycleListener _lifecycle;
   String? _accountId;
+  Timer? _sync;
+  Future<void> sync() async {
+    try {
+      await ref.read(observationSyncProvider).flush();
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -46,11 +54,28 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
         ref.invalidate(joinedCleanupsProvider);
         _accountId = null;
       }
-      if (id != null) _accountId = id;
+      _sync?.cancel();
+      if (id != null) {
+        _accountId = id;
+        if (next.phase == SessionPhase.signedIn) {
+          unawaited(sync());
+          _sync = Timer.periodic(const Duration(seconds: 30), (_) {
+            if (WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed) {
+              unawaited(sync());
+            }
+          });
+        }
+      }
     }, fireImmediately: true);
     _lifecycle = AppLifecycleListener(
       onResume: () {
         final phase = ref.read(sessionControllerProvider).phase;
+        if (phase == SessionPhase.signedIn) {
+          unawaited(sync());
+          ref.invalidate(exploreProvider);
+          ref.invalidate(clusterProvider);
+        }
         if (phase == SessionPhase.unavailable ||
             phase == SessionPhase.signedIn) {
           unawaited(ref.read(sessionControllerProvider.notifier).accessToken());
@@ -61,6 +86,7 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
 
   @override
   void dispose() {
+    _sync?.cancel();
     _lifecycle.dispose();
     super.dispose();
   }

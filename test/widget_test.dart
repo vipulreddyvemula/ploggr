@@ -1,3 +1,4 @@
+import 'package:ploggr/routes/auth_navigation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -47,7 +48,10 @@ Future<ProviderContainer> openApp(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   final container = ProviderContainer(
-    overrides: [initialLocationProvider.overrideWithValue(route)],
+    overrides: [
+      authModeProvider.overrideWithValue(AuthMode.preview),
+      initialLocationProvider.overrideWithValue(route),
+    ],
   );
   await tester.pumpWidget(
     UncontrolledProviderScope(

@@ -1,3 +1,4 @@
+import { fieldContract } from './field.contract';
 import { type INestApplication, ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
@@ -17,6 +18,8 @@ export function plogHttpContract() {
       await app.init();
     });
     afterAll(async () => { await app?.close(); });
+
+    fieldContract(()=>app);
 
     async function attachPhoto(id: string, auth: { Authorization: string }) {
       const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'green' } }).png().toBuffer();
@@ -98,6 +101,215 @@ export function plogHttpContract() {
       await http.get(activity).set(auth).expect(200).expect(res => expect(res.body.status).toBe('completed'));
     });
 
+    it('publishes geotagged photos and lets two other accounts collect one spot exactly once', async () => {
+      const http = request(app.getHttpServer());
+      const account = async () => ({
+        Authorization:
+          'Bearer ' +
+          (
+            await http
+              .post('/api/auth/signup')
+              .send({ email: randomUUID() + '@example.test', password: randomUUID() })
+              .expect(201)
+          ).body.accessToken,
+      });
+      const [author, walker, other] = await Promise.all([account(), account(), account()]);
+      const id = randomUUID(),
+        url = '/api/litter-reports/' + id;
+      const photo = await sharp({ create: { width: 4, height: 5, channels: 3, background: 'green' } })
+        .withMetadata()
+        .jpeg()
+        .toBuffer();
+      const publish = (notes = 'Beside the bench') =>
+        http
+          .put(url)
+          .set(author)
+          .field({ latitude: '37.42', longitude: '-122.08', category: 'Plastic', notes })
+          .attach('photos', photo, 'bottle.jpg');
+      const outage = jest
+        .spyOn(app.get(EvidenceStorage), 'put')
+        .mockRejectedValueOnce(new ServiceUnavailableException());
+      try {
+        await publish().expect(503);
+      } finally {
+        outage.mockRestore();
+      }
+      await http.get(url).set(walker).expect(404);
+      await publish().expect(200);
+      await publish().expect(200);
+      await publish('changed').expect(409);
+      await http.get(url).expect(401);
+      const found = await http
+        .get('/api/litter-reports')
+        .query({ west: -123, east: -122, south: 37, north: 38 })
+        .set(walker)
+        .expect(200);
+      expect(found.body.items).toContainEqual(
+        expect.objectContaining({
+          id,
+          notes: 'Beside the bench',
+          latitude: 37.42,
+          mine: false,
+          photoCount: 1,
+        }),
+      );
+      const image = await http
+        .get(url + '/photos/0')
+        .set(walker)
+        .expect(200);
+      expect((await sharp(image.body).metadata()).exif).toBeUndefined();
+      await http.delete(url).set(walker).expect(404);
+      await http
+        .post(url + '/flags')
+        .set(walker)
+        .expect(204);
+      const walks = await Promise.all(
+        [walker, other].map(async (auth) => {
+          const { body: p } = await http.post('/api/plogs').set(auth).expect(201);
+          const pic = await attachPhoto(p.id, auth);
+          const collection = randomUUID();
+          await http
+            .put('/api/litter-reports/' + collection + '/collection')
+            .set(auth)
+            .send({
+              latitude: '37.42',
+              longitude: '-122.08',
+              category: 'Glass',
+              notes: 'Collected',
+              plogId: p.id,
+              photoIds: [pic.body.id],
+            })
+            .expect(200);
+          await http
+            .get('/api/litter-reports/' + collection)
+            .set(author)
+            .expect(404);
+          return { auth, p, collection };
+        }),
+      );
+      await Promise.all(
+        walks.map(async ({ p, auth, collection }) => {
+          const data = {
+            endedAt: new Date().toISOString(),
+            durationSeconds: 0,
+            distanceMeters: 0,
+            route: [],
+            pickupIds: [id],
+          };
+          await http
+            .post('/api/plogs/' + p.id + '/finish')
+            .set(auth)
+            .send(data)
+            .expect(200);
+          await http
+            .post('/api/plogs/' + p.id + '/finish')
+            .set(auth)
+            .send(data)
+            .expect(200);
+          await http
+            .get('/api/plogs/' + p.id)
+            .set(author)
+            .expect(404);
+          await http
+            .get('/api/litter-reports/' + collection)
+            .set(author)
+            .expect(200)
+            .expect((r) => expect(r.body.status).toBe('collected'));
+        }),
+      );
+      await http
+        .get(url)
+        .set(walker)
+        .expect(200)
+        .expect((r) => expect(r.body.status).toBe('collected'));
+      const empty = await http
+        .get('/api/litter-reports')
+        .query({ west: -123, east: -122, south: 37, north: 38 })
+        .set(walker)
+        .expect(200);
+      expect(empty.body.items.map((item: { id: string }) => item.id)).not.toContain(id);
+      await http.delete(url).set(author).expect(204);
+      await http
+        .get(url + '/photos/0')
+        .set(walker)
+        .expect(404);
+    });
+
+    it('finds reports across the dateline and preserves a walk when its target is withdrawn', async () => {
+      const http = request(app.getHttpServer());
+      const signup = async () => {
+        const { body } = await http
+          .post('/api/auth/signup')
+          .send({
+            email: randomUUID() + '@example.test',
+            password: randomUUID(),
+          })
+          .expect(201);
+        return { Authorization: 'Bearer ' + body.accessToken };
+      };
+      const [author, walker] = await Promise.all([signup(), signup()]);
+      const photo = await sharp({ create: { width: 4, height: 4, channels: 3, background: 'green' } })
+        .png()
+        .toBuffer();
+      const path = '/api/litter-reports';
+      const ids = await Promise.all(
+        ['179.9', '-179.9', '0'].map(async (longitude) => {
+          const id = randomUUID();
+          await http
+            .put(path + '/' + id)
+            .set(author)
+            .field({ latitude: '0', longitude, category: 'Other', notes: '' })
+            .attach('photos', photo, 'litter.png')
+            .expect(200);
+          return id;
+        }),
+      );
+      const view = { west: 179, east: -179, south: -1, north: 1 };
+      const { body } = await http.get(path).set(walker).query(view).expect(200);
+      expect(body.items.map((r: { id: string }) => r.id).sort()).toEqual(ids.slice(0, 2).sort());
+      await http
+        .get(path)
+        .set(walker)
+        .query({ ...view, south: 3 })
+        .expect(400);
+      const { body: plog } = await http.post('/api/plogs').set(walker).expect(201);
+      const evidence = await attachPhoto(plog.id, walker);
+      await http
+        .put(path + '/' + randomUUID() + '/collection')
+        .set(author)
+        .send({
+          latitude: '0',
+          longitude: '179.9',
+          category: 'Other',
+          notes: '',
+          plogId: plog.id,
+          photoIds: [evidence.body.id],
+        })
+        .expect(404);
+      await http
+        .delete(path + '/' + ids[0])
+        .set(author)
+        .expect(204);
+      const finish = {
+        endedAt: new Date().toISOString(),
+        durationSeconds: 0,
+        distanceMeters: 0,
+        route: [],
+        pickupIds: [ids[0]],
+      };
+      const endpoint = '/api/plogs/' + plog.id + '/finish';
+      await http.post(endpoint).set(walker).send(finish).expect(200);
+      await http.post(endpoint).set(walker).send(finish).expect(200);
+      await http
+        .get(path + '/' + ids[0])
+        .set(walker)
+        .expect(404);
+      await http
+        .get(path + '/' + ids[0] + '/photos/0')
+        .set(walker)
+        .expect(404);
+    });
+
     it('stores and reads an image privately in the isolated S3 bucket', async () => {
       const storage = app.get(EvidenceStorage);
       const key = 'evidence/' + randomUUID();
@@ -116,6 +328,7 @@ export function plogHttpContract() {
       const owner = await signup();
       const other = await signup();
       await http.get('/api/plogs').expect(401);
+      await http.get('/api/plogs/summary').expect(401);
       await http.post('/api/plogs').expect(401);
       await http.get('/api/plogs/active').expect(401);
       const { body: active } = await http.post('/api/plogs').set('Authorization', 'Bearer ' + owner.accessToken).expect(201);
@@ -124,12 +337,13 @@ export function plogHttpContract() {
       const foreign = { Authorization: 'Bearer ' + other.accessToken };
       await http.get('/api/plogs/active').set(auth).expect(200, { plog: active });
       await http.get('/api/plogs/active').set(foreign).expect(200, { plog: null });
+      await http.get('/api/plogs/summary').set(auth).expect(200, { sessions: 0, distanceMeters: 0, reports:0,trackedSessions:0 });
       await http.post('/api/plogs').set(auth).expect(409);
       const detail = '/api/plogs/' + active.id;
       await http.get(detail).set(auth).expect(404);
       const url = detail + '/finish';
-      const data = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0,
-        route: [{ latitude: 17.01, longitude: 78.12 }] };
+      const data = { endedAt: new Date().toISOString(), durationSeconds: 15, distanceMeters: 12.5,
+        route: [{ latitude: 17.01, longitude: 78.12 }, { latitude: 17.0101, longitude: 78.12 }] };
       await http.post(url).send(data).expect(401);
       await http.post(url).set(foreign).send(data).expect(404);
       await http.post(url).set(auth).send({ ...data, route: [{ latitude: 121, longitude: 0 }] }).expect(400);
@@ -140,12 +354,14 @@ export function plogHttpContract() {
       expect(completed.body).toMatchObject({ id: active.id, status: 'completed', endedAt: data.endedAt });
       await http.get(detail).expect(401);
       await http.get(detail).set(foreign).expect(404);
-      await http.get(detail).set(auth).expect(200, { ...completed.body, route: data.route });
+      await http.get(detail).set(auth).expect(200, { ...completed.body, segmentStarts:[],route: data.route });
       await http.get('/api/plogs').set(auth).expect(200, { items: [completed.body], nextCursor: null });
       await http.get('/api/plogs').set(foreign).expect(200, { items: [], nextCursor: null });
       await http.get('/api/plogs?before=' + active.id).set(auth).expect(200, { items: [], nextCursor: null });
       await http.get('/api/plogs?before=invalid').set(auth).expect(400);
       await http.post(url).set(auth).send(data).expect(200, completed.body);
+      await http.get('/api/plogs/summary').set(auth).expect(200, { sessions: 1, distanceMeters: 12.5,reports:0,trackedSessions:1 });
+      await http.get('/api/plogs/summary').set(foreign).expect(200, { sessions: 0, distanceMeters: 0, reports:0,trackedSessions:0 });
       await http.post(url).set(auth).send({ ...data, route: [] }).expect(409);
       await http.get('/api/plogs/active').set(auth).expect(200, { plog: null });
     });

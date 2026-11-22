@@ -31,7 +31,7 @@ Run `make app` from the root. It selects Linux and passes the JSON with `--dart-
 
 `AppConfig` accepts an absolute HTTP or HTTPS URL with a hostname and valid port. Credentials, whitespace, a query string, and fragments are rejected at startup. Validation errors name the key without echoing its value. Include the backend's `/api/` prefix. The parser normalizes a missing trailing slash so the relative path `health/ready` preserves that prefix.
 
-When the key is omitted in a debug build, Flutter runs the offline preview and the connection button is disabled. A configured app sends its first readiness request when the user taps **Check connection**. Tests can override `appConfigProvider` explicitly.
+When the key is omitted, desktop debug builds use the offline preview. Android shows a configuration message. To explicitly run the sample UI on Android, use `flutter run --debug --dart-define=PLOGGR_PREVIEW=true` with no API URL. A configured app sends its first readiness request when the user taps **Check connection**. Tests can override `appConfigProvider` explicitly.
 
 ## Device addresses
 
@@ -67,7 +67,7 @@ With a configured API URL, the Android root initializes the Riverpod
 `accessToken`, and `logout` for feature code. On configured Android builds, onboarding opens live Login and Sign Up.
 Signup requires an email and a 15–128 character password. A protected route
 opened before sign-in resumes after successful authentication. Use **Skip → Sign up** to create the account, or **Skip → Login** for an existing account.
-Desktop development and unconfigured Android debug builds retain **Explore the preview**.
+Desktop development and explicitly selected Android preview builds retain **Explore the preview**.
 Configured Android stays in live mode during outages. Release builds require Android and an HTTPS API URL.
 
 A successful signup or login returns an identity and a device session. The
@@ -131,34 +131,40 @@ flutter test -d emulator-5554 integration_test/auth_flow_test.dart --dart-define
 
 ## Android Plog location
 
-Starting an authenticated Plog requests location while using the app. Enable
-device location and grant precise access for walking routes. If Android stops
-offering the prompt, open the app's system permissions to allow Location, then
-retry GPS. The tracker requests foreground fixes with a three-meter movement
-filter and releases its subscription when tracking ends.
+**Start Plog Session** checks for an active walk. Route recording uses Android foreground location with a three-meter movement filter. **Continue without a route** keeps the timer and pickup photos available when location is denied or unavailable. **Pause** stops the timer and GPS subscription. **Resume** starts a new route segment so distance excludes movement during the pause.
 
-The live Riverpod controller keeps a Plog ID, start time, elapsed time, ordered
-fixes and cumulative distance in meters. A failed GPS stream retains the track
-and offers a retry. Finishing freezes the measurements and stops the timer and
-GPS subscription, including when the Android permission prompt is still open.
+**Add pickup** opens the camera. **Choose from gallery** uses Android’s picker. The app stores one to six photos in the account’s private SQLite draft and accepts JPEG or PNG up to 8 MiB each. A fresh, accurate route fix can suggest nearby open sightings for a new camera photo. A linked spot can be confirmed offline. Gallery photos can be linked manually. Confirming a cleanup queues the supporting photo and spot update together. The open map changes after the server acknowledges it.
 
-In a signed-in Android session, select **Start Plog Session** on Home. The app
-checks for an active Plog before creating one. GPS starts after the server
-confirms the activity. Return to Home and use **Resume Plog Session** to see
-live time, distance and fix count. **Finish Plog** stops GPS and opens garbage-photo selection.
+**Finish Plog** asks before ending the walk. Review the photos, then **Save Plog**. An interrupted save keeps its timestamps, route segments, photos and upload IDs. Use **Resume Plog Session** and **Retry save** after reconnecting. The completed record opens directly in My Activity.
 
-Android checkpoints each new fix in an app-private SQLite transaction. Drafts
-are scoped to the API URL and account, and excluded from Android backup and
-device transfer. Finish writes the final time and measurements locally before
-sending them. If the connection drops or the app restarts, use Start or Resume
-on Home and **Retry save**. The same payload is sent until the server confirms
-completion. A conflicting completion on another device leaves the local draft
-available until you explicitly discard it.
+## Maps and reporting
 
-On Android, use the system Camera or Photos picker to select collected-garbage
-evidence for the current Plog. The local draft can retain up to six JPEG or
-PNG images, each up to 8 MiB. Selection uses Android's per-image access grant.
+**Report** shares an open litter sighting. Search for a park or street, tap the map or move it underneath the pin. **Use my location** is optional and shows the reported GPS accuracy. **Use this spot** confirms the corrected position. The map remembers the selected area for that account. Open sightings have photo cards and map markers. Larger areas show counts, and List stays available when tiles fail.
 
-Choose one to six photos and tap **Save Plog**. The app locks that selection,
-uploads each image under its stable ID, then requests completion. **Retry save**
-recovers the same photo bytes and measurements after an outage or process restart.
+`MAP_STYLE_URL` selects the MapLibre style at Flutter build time. The default is OpenFreeMap Liberty. Nest’s `PHOTON_URL` selects the place search and reverse-geocoding service. Development uses Photon’s public demo by default. Configure your own instance or hosted endpoint for production. [Photon deployment](https://github.com/komoot/photon) · [OpenFreeMap](https://openfreemap.org/quick_start/)
+
+## Photo analysis, ranking and account services
+
+Set server-side values in `backend/.env` and restart Nest after changes.
+
+| Setting | Purpose |
+| --- | --- |
+| `GEMINI_API_KEY`, optional `GEMINI_MODEL` | Enable the photo-analysis worker. The default is `gemini-3.8-flash`. Completed activities queue until a worker is configured. |
+| `MODERATOR_IDS` | Comma-separated Ploggr account UUIDs with access to flagged content and uncertain pickup photos under Profile → Moderation. |
+| `AUTH_OIDC_ISSUER`, `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_METHODS` | Auth0 native application, HTTPS tenant origin and enabled connections. Methods may include `google,apple,phone`. Set the native callback to `com.example.ploggr.auth://callback` and enable the associated Google, Apple or SMS connections on the tenant. |
+| `RESEND_API_KEY`, `MAIL_FROM` | Enable password recovery with a verified sender. The app offers an eight-digit code that expires after 15 minutes. A successful reset revokes existing Ploggr sessions. |
+
+The login page loads available methods from the server. Authentication uses the browser and PKCE for external connections. The backend exchanges the returned authorization code and issues a Ploggr session. [Auth0 native authorization](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-pkce/call-your-api-using-the-authorization-code-flow-with-pkce) · [Email delivery](https://resend.com/docs/api-reference/emails/send-email)
+
+The worker normalizes image orientation, strips metadata, deduplicates identical photos and analyzes all views together. It stores grouped labels, materials, quantities, supporting photos and first-view bounding boxes. Uncertain, empty or poor-quality results go to review. A temporary provider error retries automatically, and failed jobs can be retried from the activity. Credentials and object-storage keys stay on the server. [Gemini model reference](https://aistudio.google.com/docs/models/gemini-3-8-flash)
+
+Leaderboard periods use UTC calendar weeks and months. Rankings combine eligible material quantities with supported avoided-emissions estimates. Carbon requires a measured material mass and a compatible pair of regional disposal factors. The estimate in kg CO₂e is measured kg × (baseline factor − actual factor). Activity details show the inputs, version and sources. The app shows an unranked state until the approved policy is loaded.
+
+To import approved data, run `npm --prefix backend run impact:import -- /absolute/path/to/policy.json`. Supply one or both JSON fields.
+
+| Field | Contents |
+| --- | --- |
+| `factors` | Array of objects with `region`, `material`, `pathway`, `factor` in kg CO₂e per kg, a published HTTPS `source`, and `version`. Both pathways must use the same region, material and version. |
+| `rules` | Object with `version`, `materialPoints` mapping material names to points per item, and `carbonPointsPerKg`. Import activates that version atomically. |
+
+Supported materials are Plastic, Paper, Glass, Metal, E-waste and Other. Supply a new version for revised factors or scoring weights. The repository ships without assumed weights or emissions factors.

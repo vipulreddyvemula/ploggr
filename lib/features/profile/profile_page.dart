@@ -1,3 +1,4 @@
+import '../community/field_data.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../routes/app_routes.dart';
@@ -11,6 +12,7 @@ import '../auth/logout.dart';
 import '../auth/session/session_controller.dart' show sessionControllerProvider;
 import '../litter/application/litter_controller.dart';
 import 'profile_controller.dart';
+import '../home/activity_overview.dart';
 
 enum ProfileSection {
   activity(AppRoutes.activity, 'My Activity', Icons.work_history_outlined),
@@ -29,25 +31,54 @@ class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(profileProvider);
-    final impact = ref.watch(impactProvider);
+    final live = ref.watch(authModeProvider) == AuthMode.live;
+    final email = live
+        ? ref.watch(sessionControllerProvider.select((s) => s.user?.email))
+        : null;
+    final profile = live ? ref.watch(fieldData('profile')).value as Map? : null;
+    final name = live
+        ? (profile?['name'] as String? ?? 'Your account')
+        : ref.watch(profileProvider);
+    final impact = live ? null : ref.watch(impactProvider);
     return AppPage(
       title: 'Profile',
+      root: live,
       bottomNavigation: const BottomNavBar(caller: 'profile'),
       child: Column(
         children: [
           Row(
             children: [
-              const PersonAvatar(index: 3, radius: 34),
+              if (live)
+                CircleAvatar(
+                  radius: 34,
+                  backgroundColor: AppColors.paleGreen,
+                  child: Text(
+                    name.characters.first.toUpperCase(),
+                    style: AppText.hero.copyWith(color: AppColors.primary),
+                  ),
+                )
+              else
+                const PersonAvatar(index: 3, radius: 34),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name, style: AppText.heading),
+                    Text(
+                      name,
+                      style: AppText.heading,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: 4),
                     Text(
-                      '@${name.split(' ').first.toLowerCase()}',
+                      live
+                          ? ((email ?? '').endsWith('@identity.invalid')
+                                ? 'Connected account'
+                                : email ?? '')
+                          : '@${name.split(' ').first.toLowerCase()}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: AppText.caption,
                     ),
                   ],
@@ -55,79 +86,131 @@ class ProfilePage extends ConsumerWidget {
               ),
               IconButton(
                 tooltip: 'Edit profile',
-                onPressed: () => _edit(context, ref, name),
+                onPressed: () => _edit(
+                  context,
+                  ref,
+                  live ? (profile?['name'] ?? '') : name,
+                  live: live,
+                ),
                 icon: const Icon(Icons.edit_outlined, size: 22),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: StatTile(
-                  value: '${impact.kg.toStringAsFixed(1)} kg',
-                  label: 'Litter Collected',
-                  onTap: () => openPage(context, AppRoutes.activity),
+          if (live)
+            const AccountStats(profile: true)
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: StatTile(
+                    value: '${impact!.kg.toStringAsFixed(1)} kg',
+                    label: 'Litter Collected',
+                    onTap: () => openPage(context, AppRoutes.activity),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(
-                  value: '${impact.sessions}',
-                  label: 'Sessions',
-                  onTap: () => openPage(context, AppRoutes.activity),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: StatTile(
+                    value: '${impact.sessions}',
+                    label: 'Sessions',
+                    onTap: () => openPage(context, AppRoutes.activity),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatTile(
-                  value: '5',
-                  label: 'Badges',
-                  onTap: () => openPage(context, AppRoutes.badges),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: StatTile(
+                    value: '5',
+                    label: 'Badges',
+                    onTap: () => openPage(context, AppRoutes.badges),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 24),
           EcoCard(
             padding: EdgeInsets.zero,
             child: Column(
               children: [
+                if (live) ...[
+                  ListTile(
+                    leading: const Icon(Icons.workspace_premium_outlined),
+                    title: const Text('My badges'),
+                    onTap: () => openPage(context, AppRoutes.badges),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.leaderboard_outlined),
+                    title: const Text('Leaderboard'),
+                    onTap: () => openPage(context, AppRoutes.leaderboard),
+                  ),
+                  if (profile?['moderator'] == true)
+                    ListTile(
+                      leading: const Icon(Icons.fact_check_outlined),
+                      title: const Text('Moderation'),
+                      onTap: () => openPage(context, '/moderation'),
+                    ),
+                ],
                 for (final section in ProfileSection.values) ...[
                   if (section != ProfileSection.values.first) const Divider(),
-                  _row(context, section),
+                  _row(
+                    context,
+                    section,
+                    live && section == ProfileSection.saved
+                        ? 'My reports'
+                        : section.title,
+                  ),
                 ],
               ],
             ),
           ),
           const SizedBox(height: 24),
-          const PreviewNote(
-            text: 'Preview profile · your small steps make a big difference',
-          ),
+          if (!live)
+            const PreviewNote(
+              text: 'Preview profile · your small steps make a big difference',
+            ),
         ],
       ),
     );
   }
 
-  Widget _row(BuildContext context, ProfileSection section) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-    leading: Icon(section.icon, size: 22, color: AppColors.ink),
-    title: Text(section.title, style: AppText.label.copyWith(fontSize: 14)),
-    trailing: const Icon(Icons.chevron_right_rounded, size: 21),
-    onTap: () => openPage(context, section.path),
-  );
+  Widget _row(BuildContext context, ProfileSection section, String title) =>
+      ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        leading: Icon(section.icon, size: 22, color: AppColors.ink),
+        title: Text(title, style: AppText.label.copyWith(fontSize: 14)),
+        trailing: const Icon(Icons.chevron_right_rounded, size: 21),
+        onTap: () => openPage(context, section.path),
+      );
 
   Future<void> _edit(
     BuildContext context,
     WidgetRef ref,
-    String current,
-  ) async {
+    String current, {
+    bool live = false,
+  }) async {
     final name = await showDialog<String>(
       context: context,
       builder: (_) => _EditProfileDialog(name: current),
     );
-    if (name != null) ref.read(profileProvider.notifier).rename(name);
+    if (name == null || !context.mounted) return;
+    if (live) {
+      try {
+        await writeField(
+          ref,
+          'PUT',
+          'profile',
+          data: {'name': name.trim()},
+          reload: ['profile'],
+        );
+      } catch (_) {
+        if (context.mounted) {
+          toast(context, 'Could not save your display name. Please retry.');
+        }
+      }
+    } else {
+      ref.read(profileProvider.notifier).rename(name);
+    }
   }
 }
 
@@ -150,7 +233,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Edit preview profile'),
+    title: const Text('Edit profile'),
     content: TextField(
       controller: _name,
       autofocus: true,
@@ -196,6 +279,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
             Text('A little help for your next plog', style: AppText.title),
             SizedBox(height: 20),
             ExpansionTile(
+              key: PageStorageKey('What is plogging?'),
               title: Text('What is plogging?'),
               children: [
                 Padding(
@@ -207,6 +291,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
               ],
             ),
             ExpansionTile(
+              key: PageStorageKey('How do I use this preview?'),
               title: Text('How do I use this preview?'),
               children: [
                 Padding(
@@ -218,6 +303,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
               ],
             ),
             ExpansionTile(
+              key: PageStorageKey('Does this use my camera or location?'),
               title: Text('Does this use my camera or location?'),
               children: [
                 Padding(
@@ -229,6 +315,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
               ],
             ),
             ExpansionTile(
+              key: PageStorageKey('How can I plog thoughtfully?'),
               title: Text('How can I plog thoughtfully?'),
               children: [
                 Padding(

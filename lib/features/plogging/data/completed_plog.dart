@@ -7,13 +7,15 @@ class CompletedPlog {
     this.endedAt,
     this.seconds,
     this.meters,
-    this.route,
-  );
+    this.route, [
+    this.breaks = const [],
+  ]);
   final String id;
   final DateTime startedAt, endedAt;
   final int seconds;
   final double meters;
   final List<RouteFix>? route;
+  final List<int> breaks;
 
   factory CompletedPlog.parse(
     Object? value,
@@ -53,6 +55,7 @@ class CompletedPlog {
         seconds,
         meters.toDouble(),
         route,
+        List<int>.from(value['segmentStarts'] as List? ?? []),
       );
     }
     throw const FormatException('Invalid completed activity');

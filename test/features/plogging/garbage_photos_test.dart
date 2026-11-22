@@ -55,10 +55,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Garbage photos (2)'), findsOneWidget);
+    expect(find.text('Pickup photos (2)'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
-        (w) => w is Image && w.semanticLabel == 'Saved garbage photo 2',
+        (w) => w is Image && w.semanticLabel == 'Saved pickup photo 2',
       ),
       findsOneWidget,
     );
@@ -67,7 +67,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate(
-        (w) => w is Image && w.semanticLabel == 'Saved garbage photo 1',
+        (w) => w is Image && w.semanticLabel == 'Saved pickup photo 1',
       ),
       findsOneWidget,
     );

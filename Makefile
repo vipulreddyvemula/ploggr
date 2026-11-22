@@ -12,7 +12,7 @@ help:
 	  'make validate  Run the full isolated Linux foundation checks' \
 	  'make validate-auth DEVICE=emulator-5554  Verify M2 on an empty Android emulator' \
 	  'make validate-plog DEVICE=emulator-5554  Verify M3 GPS tracking and completion' \
-	  'make validate-evidence DEVICE=emulator-5554  Verify Android garbage-photo completion' \
+	  'make validate-evidence DEVICE=emulator-5554  Verify Android reporting, camera, map and pickup completion' \
 	  'make down      Stop development services and retain their volumes'
 
 setup: backend/.env config/development.local.json

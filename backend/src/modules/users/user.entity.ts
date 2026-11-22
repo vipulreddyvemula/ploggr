@@ -10,6 +10,9 @@ export class User {
   @Column('text')
   email!: string;
 
+  @Column('varchar', {name:'display_name',length:50,nullable:true,select:false})
+  displayName?:string;
+
   @Column('text', { name: 'password_hash', select: false })
   passwordHash?: string;
 }

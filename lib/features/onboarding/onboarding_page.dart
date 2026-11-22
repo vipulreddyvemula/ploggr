@@ -1,17 +1,20 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../auth/session/session_store.dart';
 import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import '../../routes/app_routes.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 
-class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key, this.initialPage = 0});
+class OnboardingPage extends ConsumerStatefulWidget {
+  const OnboardingPage({super.key, this.initialPage = 0, this.live = false});
   final int initialPage;
+  final bool live;
   @override
-  State<OnboardingPage> createState() => _OnboardingPageState();
+  ConsumerState<OnboardingPage> createState() => _OnboardingPageState();
 }
 
-class _OnboardingPageState extends State<OnboardingPage> {
+class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   late final PageController _controller;
   late int _page;
   static const _titles = [
@@ -29,6 +32,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
     super.initState();
     _page = widget.initialPage.clamp(0, 2);
     _controller = PageController(initialPage: _page);
+  }
+
+  Future<void> finish() async {
+    if (widget.live) {
+      try {
+        await ref.read(sessionStoreProvider)?.markOnboarding();
+      } catch (_) {}
+    }
+    if (mounted) switchPage(context, AppRoutes.login);
   }
 
   @override
@@ -51,7 +63,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   alignment: Alignment.centerRight,
                   child: _page < 2
                       ? TextButton(
-                          onPressed: () => switchPage(context, AppRoutes.login),
+                          onPressed: finish,
                           child: const Text(
                             'Skip',
                             style: TextStyle(
@@ -79,7 +91,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                             310,
                             MediaQuery.sizeOf(context).width * .8,
                           ),
-                          child: index == 1
+                          child: index == 1 && !widget.live
                               ? const TrophyArt()
                               : ClipPath(
                                   clipper: _ArtClipper(),
@@ -94,7 +106,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         Padding(
                           padding: AppSpace.page,
                           child: Text(
-                            _titles[index],
+                            widget.live && index == 1
+                                ? 'Track your walk'
+                                : _titles[index],
                             textAlign: TextAlign.center,
                             style: AppText.title,
                           ),
@@ -103,7 +117,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         Padding(
                           padding: AppSpace.page,
                           child: Text(
-                            _descriptions[index],
+                            widget.live && index == 1
+                                ? 'Record your route and photograph litter you collect.'
+                                : _descriptions[index],
                             textAlign: TextAlign.center,
                             style: AppText.body.copyWith(fontSize: 17),
                           ),
@@ -121,11 +137,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                         children: [
                           _dots(),
                           const SizedBox(height: 22),
-                          PrimaryButton(
-                            'Get Started',
-                            onPressed: () =>
-                                switchPage(context, AppRoutes.login),
-                          ),
+                          PrimaryButton('Get Started', onPressed: finish),
                         ],
                       )
                     : Row(

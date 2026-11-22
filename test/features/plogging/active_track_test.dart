@@ -45,7 +45,10 @@ class FakePlogApi extends Fake implements PlogApi {
   }
 
   @override
-  Future<void> finish(PlogTrack track) async {
+  Future<void> finish(
+    PlogTrack track, {
+    List<String> pickupIds = const [],
+  }) async {
     finishes++;
     submitted = track;
     if (offline) throw StateError('offline');
@@ -53,7 +56,18 @@ class FakePlogApi extends Fake implements PlogApi {
 }
 
 class MemoryDrafts extends Fake implements PlogDrafts {
+  @override
+  Future<List<Map<String, Object?>>> observations({
+    String? plog,
+    bool unsent = false,
+  }) async => [];
   PlogTrack? record;
+  @override
+  Future<Map<String, Map<String, dynamic>>> collectionGroups(
+    String plog,
+  ) async => {};
+  @override
+  Future<List<Map<String, Object?>>> pickups(String plog) async => [];
   bool locked = false;
   final photos = ['photo'];
   @override
@@ -124,6 +138,36 @@ void main() {
       expect(current().phase, TrackPhase.stopped);
       expect(gps.stream.hasListener, isFalse);
       expect(controller.freeze(), same(result));
+    },
+  );
+  test(
+    'pausing excludes stopped time and movement, including after restoring a route-free walk',
+    () async {
+      final start = DateTime.utc(2026, 1, 1);
+      final t = PlogTrack('p', start)
+          .append((latitude: 1.0, longitude: 2.0))
+          .pause(start.add(const Duration(minutes: 2)))
+          .resume(start.add(const Duration(minutes: 12)))
+          .append((latitude: 12.0, longitude: 30.0));
+      expect(t.breaks, [1]);
+      expect(t.distanceMeters, 0);
+      expect(
+        t.durationAt(start.add(const Duration(minutes: 15))),
+        const Duration(minutes: 5),
+      );
+      final now = DateTime.now().toUtc();
+      await controller.begin(PlogTrack('p', now));
+      gps.permission = () async {
+        throw LocationFailure.denied;
+      };
+      await controller.pause();
+      await controller.resume();
+      controller.withoutRoute();
+      await controller.pause();
+      await controller.resume();
+      expect(current().phase, TrackPhase.noRoute);
+      expect(gps.stream.hasListener, isFalse);
+      expect(drafts.record!.withoutGps, isTrue);
     },
   );
   test('late permission result cannot start tracking after stop', () async {

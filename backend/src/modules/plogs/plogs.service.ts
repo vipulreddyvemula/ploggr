@@ -30,6 +30,14 @@ export class PlogsService {
     return { plog: plog && summary(plog, userId) };
   }
 
+  async totals(owner: string) {
+    const [row] = await this.source.query(`SELECT (SELECT count(*)::int FROM litter_reports WHERE author_id=$1 AND status IN ('open','collected')) AS reports, count(*)::int AS sessions,
+      count(*) FILTER (WHERE distance_meters>0 OR EXISTS(SELECT 1 FROM plog_route_points f WHERE f.plog_id=plogs.id))::int AS "trackedSessions",
+      coalesce(sum(distance_meters),0)::float8 AS "distanceMeters"
+      FROM plogs WHERE user_id=$1 AND status='completed'`, [owner]);
+    return row;
+  }
+
   async completed(userId: string, before?: string) {
     const query = this.source.getRepository(Plog).createQueryBuilder('p')
       .where('p.user_id = :userId AND p.status = :status', { userId, status: 'completed' });
@@ -46,7 +54,7 @@ export class PlogsService {
   async detail(userId: string, id: string) {
     const record = await this.source.getRepository(Plog).findOneBy({ user: { id: userId }, id, status: 'completed' });
     if (!record) throw new NotFoundException();
-    return { ...summary(record, userId), route: await this.readRoute(this.source.manager, id) };
+    return { ...summary(record, userId), segmentStarts:record.segmentStarts, route: await this.readRoute(this.source.manager, id) };
   }
 
   private readRoute(manager: EntityManager, id: string): Promise<FinishPlogDto['route']> {
@@ -64,10 +72,17 @@ export class PlogsService {
       if (!plog) throw new NotFoundException();
       const endedAt = new Date(dto.endedAt);
       if (endedAt < plog.startedAt) throw new BadRequestException('End precedes start');
+      const breaks=dto.segmentStarts??[];
+      if(breaks.some((n,i)=>n>=dto.route.length || (i>0 && breaks[i-1]>=n))) throw new BadRequestException('Invalid route segments');
+      const pickups = [...(dto.pickupIds ?? [])].sort();
       if (plog.status === 'completed') {
+        const saved = await manager.query('SELECT report_id FROM plog_pickups WHERE plog_id=$1 ORDER BY report_id', [id]);
+        if (JSON.stringify(saved.map((r: {report_id: string}) => r.report_id)) !== JSON.stringify(pickups)) {
+          throw new ConflictException('The saved pickups differ');
+        }
         const points = await this.readRoute(manager, id);
         if (plog.endedAt?.getTime() === endedAt.getTime() && plog.distanceMeters === dto.distanceMeters
-          && plog.durationSeconds === dto.durationSeconds && points.length === dto.route.length
+          && JSON.stringify(plog.segmentStarts)===JSON.stringify(breaks) && plog.durationSeconds === dto.durationSeconds && points.length === dto.route.length
           && points.every((point, i) => point.latitude === dto.route[i].latitude && point.longitude === dto.route[i].longitude)) {
           return summary(plog, userId);
         }
@@ -86,8 +101,21 @@ export class PlogsService {
         ), 4326)::geography
         FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS route(fix, ordinal)
       `, [id, JSON.stringify(dto.route)]);
-      Object.assign(plog, { status: 'completed', endedAt, durationSeconds: dto.durationSeconds, distanceMeters: dto.distanceMeters });
+      // Lock shared reports in a stable order so concurrent pickups can both save their activity.
+      if (pickups.length) {
+        const spots = await manager.query(`SELECT id,status FROM litter_reports WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [pickups]);
+        if (spots.length !== pickups.length || spots.some((r: {status: string}) => !['open', 'collected', 'withdrawn', 'hidden'].includes(r.status))) {
+          throw new UnprocessableEntityException('A selected spot is unavailable');
+        }
+        await manager.query('INSERT INTO plog_pickups SELECT $1, unnest($2::uuid[])', [id,pickups]);
+        await manager.query("UPDATE litter_reports SET status='collected' WHERE id=ANY($1::uuid[]) AND status='open'", [pickups]);
+      }
+      const pending = await manager.query("SELECT id FROM litter_reports WHERE collection_plog_id=$1 AND status='uploading'", [id]);
+      if (pending.length) throw new UnprocessableEntityException('Wait for collection photos');
+      await manager.query("UPDATE litter_reports SET status='collected' WHERE collection_plog_id=$1 AND status='pending_finish'", [id]);
+      Object.assign(plog, { segmentStarts:breaks, status: 'completed', endedAt, durationSeconds: dto.durationSeconds, distanceMeters: dto.distanceMeters });
       await repo.save(plog);
+      await manager.query('INSERT INTO plog_analysis(plog_id) VALUES($1) ON CONFLICT DO NOTHING',[id]);
       return summary(plog, userId);
     });
   }

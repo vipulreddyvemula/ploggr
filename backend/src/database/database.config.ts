@@ -10,6 +10,8 @@ import { CreateUsers1795018043320 } from './migrations/1795018043320-CreateUsers
 import { CreateAuthSessions1795020000000 } from './migrations/1795020000000-CreateAuthSessions';
 import { CreatePlogs1795171000000 } from './migrations/1795171000000-CreatePlogs';
 import { CreateGarbageEvidence1795172900000 } from './migrations/1795172900000-CreateGarbageEvidence';
+import { FieldExperience1795400000000 } from './migrations/1795400000000-FieldExperience';
+import { CreateLitterReports1795300000000 } from './migrations/1795300000000-CreateLitterReports';
 
 export function loadDatabaseEnvironment(envFile?: string): DatabaseEnvironment {
   loadEnvironmentFile(envFile);
@@ -34,7 +36,7 @@ export function createDatabaseOptions(env: DatabaseEnvironment): DataSourceOptio
     entities: [User, AuthSession, RefreshCredential, Plog, PlogRoutePoint, GarbageEvidence],
     migrations: [
       VerifyPostgis1794873600000, CreateUsers1795018043320, CreateAuthSessions1795020000000, CreatePlogs1795171000000,
-      CreateGarbageEvidence1795172900000,
+      CreateGarbageEvidence1795172900000, CreateLitterReports1795300000000, FieldExperience1795400000000,
     ],
     migrationsTableName: 'migrations',
     logging: false,

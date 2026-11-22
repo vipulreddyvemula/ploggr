@@ -36,6 +36,14 @@ void main() {
     }
 
     app.main();
+    if (Platform.isAndroid &&
+        !const bool.hasEnvironment('API_BASE_URL') &&
+        !const bool.fromEnvironment('PLOGGR_PREVIEW')) {
+      await waitForText(
+        'Sign-in requires Android and a secure API connection.',
+      );
+      return;
+    }
     if (Platform.isAndroid && const bool.hasEnvironment('API_BASE_URL')) {
       // Configured Android requires a real session to open Settings. Run
       // this variant against a disposable backend with its database online.

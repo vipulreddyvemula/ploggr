@@ -1,8 +1,12 @@
+import '../../routes/app_routes.dart';
+import '../home/activity_overview.dart';
+import 'analysis_panel.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import 'data/completed_plog.dart';
 import 'saved_photos.dart';
+import '../spots/spot_map.dart';
 import 'data/plog_api.dart';
 
 final _activities = FutureProvider.autoDispose
@@ -16,108 +20,121 @@ final _detail = FutureProvider.autoDispose.family<CompletedPlog, String>(
 );
 
 class PlogActivityPage extends ConsumerStatefulWidget {
-  const PlogActivityPage({super.key});
+  const PlogActivityPage({super.key, this.id});
+  final String? id;
   @override
-  ConsumerState<PlogActivityPage> createState() => _PlogActivityPageState();
+  ConsumerState<PlogActivityPage> createState() => _ActivityState();
 }
 
-class _PlogActivityPageState extends ConsumerState<PlogActivityPage> {
-  final _cursors = <String?>[null];
-  String? _selected;
+class _ActivityState extends ConsumerState<PlogActivityPage> {
+  final pages = <String?>[null];
+  String metrics(CompletedPlog p) =>
+      formatWalkSummary(p.seconds, meters: p.meters);
 
-  String _localTime(DateTime time) {
-    final local = time.toLocal();
+  String date(DateTime value) {
+    final local = value.toLocal();
     return '${MaterialLocalizations.of(context).formatMediumDate(local)} · ${TimeOfDay.fromDateTime(local).format(context)}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final id = _selected;
-    final page = _activities(_cursors.last);
+    final id = widget.id;
     if (id != null) {
-      final provider = _detail(id);
       return AppPage(
         title: 'Plog details',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextButton(
-              onPressed: () => setState(() => _selected = null),
-              child: const Text('All activities'),
+        backTo: AppRoutes.activity,
+        child: ref
+            .watch(_detail(id))
+            .when(
+              loading: () => const LinearProgressIndicator(),
+              error: (_, _) => TextButton(
+                onPressed: () => ref.invalidate(_detail(id)),
+                child: const Text('Retry loading Plog'),
+              ),
+              data: (plog) {
+                final route = plog.route!;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    EcoCard(
+                      color: AppColors.paleGreen,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(metrics(plog), style: AppText.title),
+                          Text('Started ${date(plog.startedAt)}'),
+                          Text('Finished ${date(plog.endedAt)}'),
+                        ],
+                      ),
+                    ),
+                    if (route.isNotEmpty)
+                      SpotMap(
+                        fitRoute: true,
+                        route: route,
+                        breaks: plog.breaks,
+                        focus: route.first,
+                        points: {'start': route.first, 'finish': route.last},
+                        height: 200,
+                      )
+                    else
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('No route was recorded for this Plog.'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          openPage(context, '/community/write?plog=$id'),
+                      icon: const Icon(Icons.share_outlined),
+                      label: const Text('Share cleanup'),
+                    ),
+                    AnalysisPanel(id),
+                    SavedPhotos(id),
+                  ],
+                );
+              },
             ),
-            ref
-                .watch(provider)
-                .when(
-                  loading: () => const CircularProgressIndicator(),
-                  error: (_, _) => TextButton(
-                    onPressed: () => ref.invalidate(provider),
-                    child: const Text('Retry loading Plog'),
-                  ),
-                  data: (plog) {
-                    final route = plog.route!;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Started ${_localTime(plog.startedAt)}'),
-                        Text('Finished ${_localTime(plog.endedAt)}'),
-                        Text(
-                          '${plog.seconds} s · ${plog.meters.toStringAsFixed(1)} m',
-                        ),
-                        Text('${route.length} GPS fixes'),
-                        if (route.isNotEmpty)
-                          Text(
-                            'First fix   ${route.first.latitude}, ${route.first.longitude}',
-                          ),
-                        if (route.length > 1)
-                          Text(
-                            'Last fix   ${route.last.latitude}, ${route.last.longitude}',
-                          ),
-                        SavedPhotos(plog.id),
-                      ],
-                    );
-                  },
-                ),
-          ],
-        ),
       );
     }
     return AppPage(
       title: 'My Activity',
-      child: ref
-          .watch(page)
-          .when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, _) => TextButton(
-              onPressed: () => ref.invalidate(page),
-              child: const Text('Retry loading activities'),
-            ),
-            data: (result) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (result.items.isEmpty) const Text('No completed Plogs yet.'),
-                for (final plog in result.items)
-                  ListTile(
-                    title: Text(_localTime(plog.startedAt)),
-                    subtitle: Text(
-                      '${plog.seconds} s · ${plog.meters.toStringAsFixed(1)} m',
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => setState(() => _selected = plog.id),
+      backTo: AppRoutes.profile,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final cursor in pages)
+            ref
+                .watch(_activities(cursor))
+                .when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (_, _) => TextButton(
+                    onPressed: () => ref.invalidate(_activities(cursor)),
+                    child: const Text('Retry loading activities'),
                   ),
-                if (_cursors.length > 1)
-                  TextButton(
-                    onPressed: () => setState(_cursors.removeLast),
-                    child: const Text('Newer activities'),
+                  data: (result) => Column(
+                    children: [
+                      if (result.items.isEmpty && cursor == null)
+                        const Text('No completed Plogs yet.'),
+                      for (final plog in result.items)
+                        ListTile(
+                          title: Text(date(plog.startedAt)),
+                          subtitle: Text(metrics(plog)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => openPage(
+                            context,
+                            '${AppRoutes.activity}/${plog.id}',
+                          ),
+                        ),
+                      if (cursor == pages.last && result.nextCursor != null)
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => pages.add(result.nextCursor)),
+                          child: const Text('Load older activities'),
+                        ),
+                    ],
                   ),
-                if (result.nextCursor != null)
-                  TextButton(
-                    onPressed: () =>
-                        setState(() => _cursors.add(result.nextCursor)),
-                    child: const Text('Older activities'),
-                  ),
-              ],
-            ),
-          ),
+                ),
+        ],
+      ),
     );
   }
 }

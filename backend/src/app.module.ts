@@ -9,6 +9,8 @@ import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
+import { FieldModule } from './modules/field/field.module';
+import { ReportsModule } from './modules/litter-reports/reports.module';
 import { PlogsModule } from './modules/plogs/plogs.module';
 
 @Module({
@@ -25,6 +27,8 @@ import { PlogsModule } from './modules/plogs/plogs.module';
     AuthModule,
     PlogsModule,
     EvidenceModule,
+    ReportsModule,
+    FieldModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })

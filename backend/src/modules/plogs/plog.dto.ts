@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, IsArray, IsInt, IsISO8601, IsNumber, IsObject, Matches, Max, Min, ValidateNested,
+  ArrayUnique, IsOptional, IsUUID, ArrayMaxSize, IsArray, IsInt, IsISO8601, IsNumber, IsObject, Matches, Max, Min, ValidateNested,
 } from 'class-validator';
 
 class RouteFix {
@@ -12,6 +12,12 @@ class RouteFix {
 }
 
 export class FinishPlogDto {
+  @IsOptional() @IsArray() @ArrayMaxSize(20000) @ArrayUnique() @IsInt({each:true}) @Min(1,{each:true})
+  segmentStarts?:number[];
+
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @ArrayUnique() @IsUUID('4', { each: true })
+  pickupIds?: string[];
+
   @IsISO8601({ strict: true })
   @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
   endedAt!: string;

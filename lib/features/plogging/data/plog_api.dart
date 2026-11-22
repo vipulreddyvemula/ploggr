@@ -115,15 +115,34 @@ class PlogApi {
     throw const FormatException('Invalid photo acknowledgement');
   }
 
-  Future<void> finish(PlogTrack track) async {
+  Future<void> publishCollection(String id, Map<String, dynamic> fields) async {
+    final result = await client.request<Map>(
+      'PUT',
+      'litter-reports/$id/collection',
+      data: fields,
+    );
+    if (result?['id'] != id) {
+      throw const FormatException('Missing collection acknowledgement');
+    }
+  }
+
+  Future<void> finish(
+    PlogTrack track, {
+    List<String> pickupIds = const [],
+  }) async {
     final end = track.endedAt!;
     final saved = await client.request<Object?>(
       'POST',
       'plogs/${track.id}/finish',
       data: {
         'endedAt': end.toUtc().toIso8601String(),
-        'durationSeconds': end.difference(track.startedAt).inSeconds,
+        'durationSeconds': track.durationAt(end).inSeconds,
         'distanceMeters': track.distanceMeters,
+        if (pickupIds.isNotEmpty) 'pickupIds': pickupIds,
+        if (track.breaks.isNotEmpty)
+          'segmentStarts': track.breaks
+              .where((i) => i < track.route.length)
+              .toList(),
         'route': [
           for (final fix in track.route)
             {'latitude': fix.latitude, 'longitude': fix.longitude},

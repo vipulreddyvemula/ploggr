@@ -1,3 +1,4 @@
+import '../../routes/auth_navigation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -104,9 +105,10 @@ class ConnectionPage extends ConsumerWidget {
                 : () => ref.read(connectionCheckProvider.notifier).check(),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'This check contacts the configured server. '
-            'Your preview activity and profile details stay on this device.',
+          Text(
+            ref.watch(authModeProvider) == AuthMode.live
+                ? 'This check tests the connection to your Ploggr server.'
+                : 'This check contacts the configured server. Your preview activity and profile details stay on this device.',
             style: AppText.caption,
           ),
         ],

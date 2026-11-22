@@ -1,3 +1,4 @@
+import 'package:ploggr/routes/auth_navigation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -13,7 +14,9 @@ void main() {
   testWidgets('Android screenshots of all 18 reference screens', (
     tester,
   ) async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [authModeProvider.overrideWithValue(AuthMode.preview)],
+    );
     addTearDown(container.dispose);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const PloggrApp()),
@@ -56,7 +59,10 @@ void main() {
     tester,
   ) async {
     final container = ProviderContainer(
-      overrides: [initialLocationProvider.overrideWithValue('/home')],
+      overrides: [
+        authModeProvider.overrideWithValue(AuthMode.preview),
+        initialLocationProvider.overrideWithValue('/home'),
+      ],
     );
     addTearDown(container.dispose);
     await tester.pumpWidget(

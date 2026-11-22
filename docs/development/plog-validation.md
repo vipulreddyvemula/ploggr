@@ -17,18 +17,18 @@ make validate-plog DEVICE=emulator-5554
 
 The runner creates a disposable database and API, installs the test APK,
 selects Android permission buttons and sends simulated coordinates. It removes
-the APK, port forwarding rule and Compose project when it finishes. On M4 branches this runner also exercises the camera, gallery and private image storage. The final line is `Android Plog tracking, evidence and completion validation passed.` [Emulator requirements and evidence checks](evidence-validation.md)
+the APK, port forwarding rule and Compose project when it finishes. The runner also exercises shared reports, the in-app camera, gallery and private image storage. The final line is `Android Plog tracking, evidence and completion validation passed.` [Emulator requirements and evidence checks](evidence-validation.md)
 
 | Scenario | What the check observes |
 | --- | --- |
 | Start | Home starts an authenticated activity. The HTTP contract also checks anonymous requests and a second start. |
-| Permission and GPS | The host denies Android's permission prompt, retries from the Plog screen and grants foreground access. The app receives two known emulator locations in the active session. |
+| Permission and GPS | The host denies Android's permission prompt, retries from the Plog screen and grants foreground access. The app receives two known emulator locations, including one with the screen locked. |
 | Finish during an outage | The runner stops the API before tapping Finish. The app stores the end time, full route, duration and distance locally. A further device fix leaves the frozen activity intact. |
 | Recover | The host force-stops the app, restores the API and reopens the app. Retry submits the frozen track. The account has one completed activity and clears its local draft after confirmation. |
 | Retrieve | The app opens activity details. The probe compares every returned coordinate, both timestamps, seconds and meters to the pre-restart snapshot. HTTP integration tests exercise owner filtering, pagination and invalid transitions. |
 
 Android receives simulated GPS fixes in this check. Physical-device accuracy,
-battery consumption and tracking with the app backgrounded require separate
+battery consumption and long-duration background tracking require separate
 field measurements.
 
 ## Verified run

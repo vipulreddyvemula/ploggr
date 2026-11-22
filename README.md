@@ -1,16 +1,11 @@
 # Ploggr
 
-Ploggr is a Flutter app for people who pick up litter while walking or jogging. Its 18-screen preview lets you try a session, report sample litter, join a cleanup, and explore community and profile screens. Preview activity lives in memory until the app restarts.
+Ploggr is a Flutter app for people who pick up litter while walking or jogging.
+During a Plog, use **Add pickup** to save one to six photos. You can pause and resume, walk without a recorded route and review the photos before saving. Opening a nearby or linked litter report lets you confirm a cleanup, say some litter remains, or skip the update.
 
-**Profile → Settings → Connection check** calls NestJS, which runs a read-only spatial query against PostgreSQL and PostGIS. [Foundation decisions](https://github.com/devBuildersunique/ploggr/issues/2#issuecomment-5240945427)
+Use **Report** to share litter that still needs cleaning. Choose photos, search for a landmark or move the map pin, then post. **Map** shows open sightings. Select a pin to see the original photos, get directions or start a Plog there.
 
-The backend supports email/password authentication and renewable device sessions. Android can securely store a refresh token and restore the session after restart. On Android with a configured API, Login and Sign Up establish a live session. Profile → Settings shows the authenticated email and offers Log out. Desktop development and unconfigured debug builds retain the sample preview. [Authentication contract](backend/docs/maintenance.md#authentication) · [Android session verification](docs/development/configuration.md#android-authentication-sessions)
-
-Signed-in Android users can start a Plog from Home, record a GPS route, and
-finish tracking, then take or choose **1–6 garbage photos**. **Save Plog**
-uploads the selected photos and confirms completion. **Profile → My Activity**
-shows the route, measurements and private photos. An interrupted save can
-resume from the Android draft after an app restart. [Android tracking](docs/development/configuration.md#android-plog-location) · [Plog API](backend/docs/maintenance.md#plog-lifecycle-api)
+**My Activity** contains your private route, pickup photos and analysis. **Community** has posts, sightings, cleanup events and challenges. **Leaderboard** is available on Home, Community and Profile. Rankings use the published impact policy and eligible analyzed pickups. [Android configuration](docs/development/configuration.md#android-plog-location) · [Android UX and validation](docs/design/implementation.md#signed-in-android-flows)
 
 ## Get a checkout
 
@@ -19,13 +14,6 @@ For ordinary development, clone upstream.
 ```bash
 git clone https://github.com/devBuildersunique/ploggr.git
 cd ploggr
-```
-
-While M1.8 is under review, clone the branch from the fork or local checkout that contains it. Replace `SOURCE` with that URL or path. The branch starts at M1.7 commit `e6abeeb`.
-
-```bash
-git clone --branch feature/m1.8-foundation-validation SOURCE ploggr-m18
-cd ploggr-m18
 ```
 
 ## Run the complete foundation
@@ -80,7 +68,7 @@ Flutter screen → Riverpod controller → Dio → GET /api/health/ready
 | `make validate` | Install locked dependencies, build both applications, verify migrations and PostGIS, and drive a real Linux app through database and API outages and recovery. Uses a disposable Compose project and random ports. |
 | `make validate-auth DEVICE=emulator-5554` | Verify signup, login, identity, session persistence, and logout on an empty Android emulator against an isolated API and database. [M2 acceptance report](docs/development/authentication-validation.md) |
 | `make validate-plog DEVICE=emulator-5554` | Exercise location permission, GPS fixes, offline finish, process restart and activity retrieval on a disposable Android emulator. [M3 verification](docs/development/plog-validation.md) |
-| `make validate-evidence DEVICE=emulator-5554` | Exercise Android camera and gallery, interrupted upload, retry, private storage restart and photo retrieval. [M4 verification](docs/development/evidence-validation.md) |
+| `make validate-evidence DEVICE=emulator-5554` | Post a spot as one user, collect it as another, capture photos during a locked-screen walk, and recover an interrupted save. [M4 verification](docs/development/evidence-validation.md) |
 | `flutter build apk --debug` | Build an Android debug APK with the Android toolchain. |
 
 Full validation requires Docker and a Linux display. Use `xvfb-run -a make validate` on headless Linux with Xvfb and xauth installed. CI runs the same Node runner. Expect `Foundation validation passed.` Use a separate checkout while a watch server or another build is using the same output directories. [Foundation validation and security report](docs/development/foundation-validation.md)

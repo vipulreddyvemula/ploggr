@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:ploggr/app.dart';
+import 'package:ploggr/features/spots/spot_api.dart';
+import 'package:ploggr/features/spots/spot.dart';
 import 'package:ploggr/core/config/app_config.dart';
 import 'package:ploggr/core/config/app_config_provider.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
@@ -17,7 +19,7 @@ File marker(String name) =>
     File('${Directory.systemTemp.parent.path}/cache/plog-$name');
 
 Future<void> waitFor(bool Function() ready, String description) async {
-  final until = DateTime.now().add(const Duration(minutes: 3));
+  final until = DateTime.now().add(const Duration(minutes: 6));
   while (!ready()) {
     if (DateTime.now().isAfter(until)) {
       throw StateError('Timed out during $description');
@@ -49,9 +51,32 @@ void main() async {
         const Uuid().v4(),
       );
     }
-    final owner = container.read(sessionControllerProvider).user!.id;
     if (!restoring) {
       await marker('ready').writeAsString('ok');
+      await waitFor(() => marker('posted').existsSync(), 'first reporter');
+      final spots = container.read(spotApiProvider);
+      final post = (await spots.mine(null)).items.single;
+      if (post.notes != 'Lakeside' ||
+          post.point.latitude.abs() > 90 ||
+          post.point.longitude.abs() > 180 ||
+          post.photoCount != 1) {
+        throw StateError('Report differs from confirmed photo, note or pin');
+      }
+      await marker('shared-id').writeAsString(post.id);
+      await sessions.logout();
+      await sessions.signup(
+        '${const Uuid().v4()}@example.test',
+        const Uuid().v4(),
+      );
+      final other = container.read(spotApiProvider);
+      if ((await other.detail(post.id)).mine ||
+          (await other.image(post.id, 0)).isEmpty) {
+        throw StateError('Shared spot not available to second account');
+      }
+      await marker('walker').writeAsString('ok');
+    }
+    final owner = container.read(sessionControllerProvider).user!.id;
+    if (!restoring) {
       await waitFor(
         () => view().phase == TrackPhase.gpsError,
         'permission denial',
@@ -66,14 +91,19 @@ void main() async {
       );
       await marker('tracking').writeAsString('ok');
       for (final (index, longitude) in [-122.084, -122.083].indexed) {
-        await waitFor(
-          () => view().track!.route.any(
+        await waitFor(() {
+          final state = view();
+          if (state.phase == TrackPhase.gpsError) {
+            throw StateError(
+              'GPS stopped after permission was granted: ${state.error}',
+            );
+          }
+          return state.track!.route.any(
             (p) =>
                 (p.latitude - 37.422).abs() < 0.0001 &&
                 (p.longitude - longitude).abs() < 0.0001,
-          ),
-          'fix $index',
-        );
+          );
+        }, 'fix $index');
         await marker('fix-$index').writeAsString('ok');
       }
       await waitFor(
@@ -116,7 +146,7 @@ void main() async {
           'id': track.id,
           'start': track.startedAt.millisecondsSinceEpoch,
           'end': track.endedAt!.millisecondsSinceEpoch,
-          'seconds': track.endedAt!.difference(track.startedAt).inSeconds,
+          'seconds': track.durationAt(track.endedAt!).inSeconds,
           'meters': track.distanceMeters,
           'route': [
             for (final p in track.route) [p.latitude, p.longitude],
@@ -169,6 +199,15 @@ void main() async {
         if (!listEquals(original, await api.image(record.id, id))) {
           throw StateError('Retrieved image differs from the draft bytes');
         }
+      }
+      final shared = await marker('shared-id').readAsString();
+      final spots = container.read(spotApiProvider);
+      if ((await spots.detail(shared)).status != 'collected' ||
+          (await spots.explore(world)).items.any((s) => s.id == shared)) {
+        throw StateError('Linked pickup remained on the open map');
+      }
+      if ((await spots.mine(null)).items.isNotEmpty) {
+        throw StateError('Adding a private pickup created a public sighting.');
       }
       await marker('verified').writeAsString('ok', flush: true);
     }

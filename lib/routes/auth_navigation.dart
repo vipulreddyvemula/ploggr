@@ -10,11 +10,18 @@ enum AuthMode { live, preview, unavailable }
 
 final authModeProvider = Provider<AuthMode>((ref) {
   if (ref.watch(sessionStoreProvider) != null) return AuthMode.live;
-  return kDebugMode ? AuthMode.preview : AuthMode.unavailable;
+  if (!kDebugMode) return AuthMode.unavailable;
+  if (!kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android &&
+      !const bool.fromEnvironment('PLOGGR_PREVIEW')) {
+    return AuthMode.unavailable;
+  }
+  return AuthMode.preview;
 });
 
 /// Owned by one router. Destinations come only from recognized app routes.
 class AuthNavigation extends ChangeNotifier {
+  bool onboardingSeen = false;
   String? _destination;
   bool _returnToLogin = false;
 
@@ -49,7 +56,7 @@ class AuthNavigation extends ChangeNotifier {
         state.error == null &&
         !state.uri.hasScheme &&
         !state.uri.hasAuthority &&
-        state.fullPath == path;
+        state.fullPath != null;
     final protected = known && !entry && !splash;
     if (phase == SessionPhase.signedIn || phase == SessionPhase.renewing) {
       if (protected) return null;
@@ -57,14 +64,14 @@ class AuthNavigation extends ChangeNotifier {
       _destination = null;
       return destination;
     }
-    if (protected) _destination = path;
+    if (protected) _destination = state.uri.toString();
     if (phase == SessionPhase.unavailable || phase == SessionPhase.restoring) {
       if (entry && phase == SessionPhase.restoring) return null;
       return splash ? null : AppRoutes.splash;
     }
     if (entry) return null;
     if (splash && _destination == null && phase != SessionPhase.expired) {
-      return AppRoutes.onboarding;
+      return onboardingSeen ? AppRoutes.login : AppRoutes.onboarding;
     }
     return AppRoutes.login;
   }

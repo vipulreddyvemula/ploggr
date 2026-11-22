@@ -11,6 +11,14 @@ SessionBundle bundle() => SessionBundle(
 );
 
 class MemoryStore implements SessionStore {
+  bool onboarded = false;
+  @override
+  Future<bool> seenOnboarding() async => onboarded;
+  @override
+  Future<void> markOnboarding() async {
+    onboarded = true;
+  }
+
   StoredSession? value;
   bool failSave = false;
   bool locked = false;
@@ -43,6 +51,15 @@ class MemoryStore implements SessionStore {
 }
 
 class FakeApi implements SessionApi {
+  @override
+  Future<Map> options() async => {'methods': [], 'recovery': false};
+  @override
+  Future<void> reset(String email, String code, String password) async {}
+  @override
+  Future<void> requestReset(String email) async {}
+  @override
+  Future<SessionBundle> external(String code, String verifier) async =>
+      throw UnimplementedError();
   final requests = <String>[];
   final revoked = <String>[];
   Future<SessionBundle> Function()? onRefresh;

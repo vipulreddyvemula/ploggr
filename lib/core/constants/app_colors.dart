@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 abstract final class AppColors {
-  static const primary = Color(0xFF218600);
+  static const primary = Color(0xFF236638);
   static const forest = Color(0xFF103F20);
   static const leaf = Color(0xFF79BE35);
   static const paleGreen = Color(0xFFE8F4DE);

@@ -17,6 +17,7 @@ class AppPage extends StatelessWidget {
     this.actions,
     this.scroll = true,
     this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 24),
+    this.root = false,
     this.backTo = AppRoutes.home,
   });
   final String title;
@@ -24,58 +25,98 @@ class AppPage extends StatelessWidget {
   final Widget? bottomNavigation;
   final Widget? bottomAction;
   final List<Widget>? actions;
-  final bool scroll;
+  final bool scroll, root;
   final EdgeInsets padding;
   final String backTo;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: IconButton(
-        tooltip: 'Back',
-        icon: const Icon(Icons.arrow_back_rounded, size: 22),
-        onPressed: () => goBack(context, fallback: backTo),
-      ),
-      title: Text(title, maxLines: 2, textAlign: TextAlign.center),
-      actions: actions ?? [const SizedBox(width: 48)],
-    ),
-    body: SafeArea(
-      top: false,
-      bottom: bottomNavigation == null && bottomAction == null,
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: scroll
-              ? SingleChildScrollView(
-                  key: const PageStorageKey('page-scroll'),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: padding,
-                  child: child,
-                )
-              : Padding(padding: padding, child: child),
+  Widget build(BuildContext context) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final compactKeyboard =
+        bottomAction != null &&
+        keyboard > 0 &&
+        MediaQuery.sizeOf(context).height - keyboard < 320;
+    return Scaffold(
+      appBar: compactKeyboard
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              leading: root
+                  ? null
+                  : IconButton(
+                      tooltip: 'Back',
+                      icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                      onPressed: () => goBack(context, fallback: backTo),
+                    ),
+              title: Text(title, maxLines: 2, textAlign: TextAlign.center),
+              actions: actions ?? (root ? null : [const SizedBox(width: 48)]),
+            ),
+      body: SafeArea(
+        top: false,
+        bottom: bottomNavigation == null && bottomAction == null,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: scroll
+                ? SingleChildScrollView(
+                    key: const PageStorageKey('page-scroll'),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: padding,
+                    child: child,
+                  )
+                : Padding(padding: padding, child: child),
+          ),
         ),
       ),
-    ),
-    bottomNavigationBar:
-        bottomNavigation ??
-        (bottomAction == null
-            ? null
-            : SafeArea(
-                top: false,
-                child: Center(
-                  heightFactor: 1,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                      child: bottomAction,
+      bottomNavigationBar: bottomAction == null
+          ? (keyboard == 0 ? bottomNavigation : null)
+          : Padding(
+              padding: EdgeInsets.only(bottom: keyboard),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SafeArea(
+                    top: false,
+                    bottom: bottomNavigation == null,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: Padding(
+                        padding: compactKeyboard
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 2,
+                              )
+                            : const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        child: compactKeyboard
+                            ? Row(
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Hide keyboard',
+                                    icon: const Icon(
+                                      Icons.keyboard_hide_outlined,
+                                    ),
+                                    onPressed: () => FocusManager
+                                        .instance
+                                        .primaryFocus
+                                        ?.unfocus(),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: bottomAction!),
+                                ],
+                              )
+                            : bottomAction,
+                      ),
                     ),
                   ),
-                ),
-              )),
-  );
+                  if (bottomNavigation != null && keyboard == 0)
+                    bottomNavigation!,
+                ],
+              ),
+            ),
+    );
+  }
 }
 
 // Transient feedback belongs to the originating screen. Clear it before
@@ -255,7 +296,7 @@ class FilterTabs extends StatelessWidget {
                 borderRadius: AppRadius.pill,
                 onTap: () => onChanged(index),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  constraints: const BoxConstraints(minHeight: 48),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -332,6 +373,8 @@ class AppField extends StatefulWidget {
     super.key,
     required this.label,
     required this.icon,
+    this.autofillHints,
+    this.helper,
     this.controller,
     this.password = false,
     this.keyboardType,
@@ -341,6 +384,8 @@ class AppField extends StatefulWidget {
   });
   final String label;
   final IconData icon;
+  final Iterable<String>? autofillHints;
+  final String? helper;
   final TextEditingController? controller;
   final bool password;
   final TextInputType? keyboardType;
@@ -356,6 +401,7 @@ class _AppFieldState extends State<AppField> {
   @override
   Widget build(BuildContext context) => TextFormField(
     controller: widget.controller,
+    autofillHints: widget.autofillHints,
     obscureText: widget.password && hidden,
     enableSuggestions: !widget.password,
     autocorrect: !widget.password,
@@ -365,6 +411,7 @@ class _AppFieldState extends State<AppField> {
     onFieldSubmitted: widget.onSubmitted,
     decoration: InputDecoration(
       labelText: widget.label,
+      helperText: widget.helper,
       prefixIcon: Icon(widget.icon, size: 21),
       suffixIcon: widget.password
           ? IconButton(
@@ -400,7 +447,7 @@ class LitterTypePicker extends StatelessWidget {
     'Other',
   ];
   final String? selected;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String>? onChanged;
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) => Wrap(
@@ -422,7 +469,7 @@ class LitterTypePicker extends StatelessWidget {
                   ),
                   child: InkWell(
                     borderRadius: AppRadius.pill,
-                    onTap: () => onChanged(type),
+                    onTap: onChanged == null ? null : () => onChanged!(type),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(minHeight: 48),
                       child: Center(

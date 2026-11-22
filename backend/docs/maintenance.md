@@ -401,3 +401,49 @@ Use authenticated GET requests to list `/api/plogs/:plogId/evidence` and read
 `/api/plogs/:plogId/evidence/:id` as image bytes. The list contains confirmed
 photos. A foreign Plog or inaccessible photo returns 404. The activity screen
 can retry an unavailable photo independently of its GPS summary.
+
+## Shared litter reports
+
+Run migrations before deploying the new Android client. All report endpoints
+require a bearer token. Standalone sightings appear on Explore after storage
+confirms every photo. Collection reports attached to a Plog appear as collected
+in the same transaction that commits the finished walk and its selected pickups.
+
+| Method | Path under `/api` | Behavior |
+| --- | --- | --- |
+| PUT | `litter-reports/:id` | Multipart latitude, longitude, category, notes and 1–6 repeated `photos` fields. Retry the same UUID and payload after loss of connectivity. |
+| GET | `litter-reports?south=…&west=…&north=…&east=…` | Return up to 100 open spots in the viewport, with a truncation indicator. A viewport can cross the antimeridian. |
+| GET | `litter-reports/mine?before=…` | Page through the caller’s published sightings and recorded pickups. |
+| GET | `litter-reports/:id`, `litter-reports/:id/photos/:position` | Read shared fields and the metadata-stripped JPEG numbered from zero. |
+| PUT | `litter-reports/:id/collection` | Stage a confirmed pin, category and notes with the owner’s Plog ID and uploaded evidence IDs. |
+| DELETE | `litter-reports/:id` | Author withdraws the report and its images from shared views. |
+| POST | `litter-reports/:id/flags` | Flag a visible report for review. A user can flag a report once. |
+| GET | `plogs/summary` | Get the caller’s completed Plog count and total distance in meters. |
+
+Plog finish accepts an optional array of `pickupIds`. Completed retries compare
+the selected IDs as well as the frozen measurements. Earlier app versions and
+their historical evidence retain the original ownership checks. Shared reports
+use separately encoded photos under the existing private bucket's evidence
+prefix. The map provider receives basemap requests. Ploggr serves the pins,
+notes and photos. Routes are available through their owner's authenticated API.
+
+Operators with database credentials can list flagged report IDs with
+`npm --prefix backend run reports:moderate -- list`. Inspect the report through
+its authenticated detail and photo endpoints. Use
+`npm --prefix backend run reports:moderate -- hide <report-uuid>` to remove it
+from all shared views. The historical Plog and its route survive moderation.
+
+### Android field operations
+
+All of these routes use the signed-in session. Object storage stays private.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET litter-reports/clusters`, `GET litter-reports/nearby` | Return open reports grouped within the viewport or up to eight candidates within 75 meters of a location. |
+| `PUT litter-reports/:id/observations/:observation` | Apply an idempotent cleaned, remains or missing observation. A cleanup requires the caller’s uploaded photo. A row lock gives one resolution credit per spot. |
+| `GET plogs/:id/analysis`, `POST plogs/:id/analysis/retry`, `POST plogs/:id/analysis/review` | Inspect an owned activity, requeue a failed job, or request review of an analyzed result. Workers claim jobs with time-limited leases. |
+| `GET impact/factors`, `PUT plogs/:id/disposal` | Read published factors and save measured material mass and actual and baseline disposal pathways. |
+| `GET leaderboard?period=week` | Read community standings, the caller’s overall position, pending analysis and the effective policy. Month and all time use `month` and `all`. |
+| `GET moderation`, `GET moderation/analysis` | Review flagged posts and reports or uncertain detections. Two independent missing reports since the last sighting trigger review. Moderators may keep or hide content and correct grouped detections against the original pickup photos. |
+
+Operators publish factor sets and point weights with the versioned import command. [Impact configuration](../../docs/development/configuration.md#photo-analysis-ranking-and-account-services)
