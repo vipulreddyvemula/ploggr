@@ -154,6 +154,8 @@ void main() {
         );
         await tap('Report');
         await tap('Choose photo');
+        await tap('Continue to details');
+        await tap('Continue to location');
         await tap('Choose spot');
         await progress('Map picker');
         expect(gps.locationRequests, 0);
@@ -193,13 +195,24 @@ void main() {
         })).first;
         await capture('choose-spot');
         await tap('Use this spot');
+        await tap('Review report');
         await tap('Post report');
+        await tap('Show on map');
         await wait(
           () => router.routerDelegate.currentConfiguration.uri.path == '/map',
           'published map',
         );
         final reports = container.read(spotApiProvider);
         final spot = (await reports.mine(null)).items.single;
+        expect(spot.status, 'open');
+        expect(
+          router
+              .routerDelegate
+              .currentConfiguration
+              .uri
+              .queryParameters['spot'],
+          spot.id,
+        );
         expect(spot.place, contains('Riverside Park'));
         expect(
           spot.point.latitude,
@@ -250,6 +263,7 @@ void main() {
         await tap('Finish Plog');
         await tap('Finish Plog');
         await tap('Save Plog');
+        await tap('View activity');
         await wait(
           () => router.routerDelegate.currentConfiguration.uri.path.startsWith(
             '/profile/activity/',
@@ -268,12 +282,14 @@ void main() {
         expect(await api.evidence(id), hasLength(1));
         expect(
           (await container.read(spotApiProvider).detail(spot.id)).status,
-          'collected',
+          'open',
         );
+        expect(saved.unverifiedCleanups, 1);
         if (const bool.fromEnvironment('FIELD_QA_LIVE_ANALYSIS')) {
           await wait(
             () =>
                 label('Analysis ready').evaluate().isNotEmpty ||
+                label('Analysis reviewed').evaluate().isNotEmpty ||
                 label('Needs review').evaluate().isNotEmpty,
             'live vision result',
             timeout: const Duration(minutes: 6),

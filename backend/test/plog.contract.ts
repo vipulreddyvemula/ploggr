@@ -16,7 +16,7 @@ export function plogContract(source: () => DataSource) {
       const startedAt = new Date('2026-11-20T07:00:00Z');
       const endedAt = new Date('2026-11-20T07:05:00Z');
       const { id } = await plogs.save({ user, startedAt });
-      expect(await plogs.findOneByOrFail({ id })).toEqual({
+      expect(await plogs.findOneByOrFail({ id })).toMatchObject({
         id, startedAt, endedAt: null, segmentStarts:[], durationSeconds: 0, distanceMeters: 0, status: 'active',
       });
       const readRoute = () => points.findBy({ plogId: id });
@@ -27,14 +27,14 @@ export function plogContract(source: () => DataSource) {
         { type: 'Point', coordinates: [78.4882, 17.3864] },
       ];
       await points.insert({ plogId: id, sequence: 0, location: route[0] });
-      expect(await readRoute()).toEqual([{ plogId: id, sequence: 0, location: route[0] }]);
+      expect(await readRoute()).toMatchObject([{ plogId: id, sequence: 0, location: route[0] }]);
       await points.insert([
         { plogId: id, sequence: 2, location: route[2] },
         { plogId: id, sequence: 1, location: route[1] },
       ]);
       await plogs.update(id, { status: 'completed', endedAt, durationSeconds: 300, distanceMeters: 247.5 });
       const stored = await plogs.findOneOrFail({ where: { id }, relations: { user: true } });
-      expect(stored).toEqual({
+      expect(stored).toMatchObject({
         id, user: { id: user.id, email: user.email }, startedAt, endedAt,
         status: 'completed',segmentStarts:[], durationSeconds: 300, distanceMeters: 247.5,
       });

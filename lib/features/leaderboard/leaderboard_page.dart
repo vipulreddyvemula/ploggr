@@ -36,13 +36,16 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
               decoration: BoxDecoration(
                 color: entries[i].name == 'You'
-                    ? AppColors.paleGreen
+                    ? context.colors.primaryContainer
                     : Colors.transparent,
                 borderRadius: AppRadius.small,
                 border: entries[i].name == 'You'
                     ? null
-                    : const Border(
-                        bottom: BorderSide(color: AppColors.border, width: .7),
+                    : Border(
+                        bottom: BorderSide(
+                          color: context.colors.outlineVariant,
+                          width: .7,
+                        ),
                       ),
               ),
               child: Row(
@@ -53,7 +56,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                         ? Icon(
                             Icons.emoji_events_rounded,
                             color: [
-                              AppColors.gold,
+                              context.goldIcon,
                               const Color(0xFF939CA7),
                               const Color(0xFFE6843B),
                             ][i],
@@ -72,7 +75,9 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage> {
                   const SizedBox(width: 6),
                   Text(
                     '${score(entries[i]).toStringAsFixed(1)} kg',
-                    style: AppText.label.copyWith(color: AppColors.primary),
+                    style: AppText.label.copyWith(
+                      color: context.colors.primary,
+                    ),
                   ),
                 ],
               ),

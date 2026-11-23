@@ -1,9 +1,10 @@
+import '../../shared/widgets/evidence_review.dart';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'data/plog_api.dart';
-import '../spots/spot_editor.dart';
+import '../../shared/widgets/ploggr_ui.dart';
 
 final _photos = FutureProvider.autoDispose.family<List<String>, String>(
   (ref, id) => ref.watch(plogApiProvider).evidence(id),
@@ -21,7 +22,7 @@ class SavedPhotos extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => ref
       .watch(_photos(id))
       .when(
-        loading: () => const LinearProgressIndicator(),
+        loading: () => const AppLoading('Loading pickup photos'),
         error: (_, _) => TextButton(
           onPressed: () => ref.invalidate(_photos(id)),
           child: const Text('Retry loading photos'),
@@ -44,22 +45,16 @@ class SavedPhotos extends ConsumerWidget {
                       child: Text('Photo ${index + 1} unavailable · Retry'),
                     ),
                     data: (bytes) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        children: [
-                          GestureDetector(
-                            onTap: () => viewPhoto(context, MemoryImage(bytes)),
-                            child: Image.memory(
-                              bytes,
-                              cacheWidth: 720,
-                              height: 160,
-                              fit: BoxFit.contain,
-                              semanticLabel: 'Saved pickup photo ${index + 1}',
-                              errorBuilder: (_, _, _) =>
-                                  Text('Photo ${index + 1} unavailable'),
-                            ),
-                          ),
-                        ],
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpace.xs,
+                      ),
+                      child: SizedBox(
+                        height: 160,
+                        width: double.infinity,
+                        child: EvidenceImage(
+                          image: MemoryImage(bytes),
+                          label: 'Saved pickup photo ${index + 1}',
+                        ),
                       ),
                     ),
                   ),
@@ -98,6 +93,7 @@ class _DetectionImage extends StatefulWidget {
 
 class _DetectionImageState extends State<_DetectionImage> {
   late final size = readSize();
+  bool showBox = true;
   Future<double> readSize() async {
     final buffer = await ui.ImmutableBuffer.fromUint8List(widget.bytes);
     try {
@@ -121,38 +117,56 @@ class _DetectionImageState extends State<_DetectionImage> {
             ? const Text('Photo unavailable')
             : const LinearProgressIndicator();
       }
-      final box = widget.box;
-      return AspectRatio(
-        aspectRatio: s.data!,
-        child: LayoutBuilder(
-          builder: (ctx, c) => Stack(
-            fit: StackFit.expand,
-            children: [
-              GestureDetector(
-                onTap: () => viewPhoto(context, MemoryImage(widget.bytes)),
-                child: Image.memory(
-                  widget.bytes,
-                  cacheWidth: 720,
-                  fit: BoxFit.fill,
-                ),
-              ),
-              if (box != null && box.length == 4)
-                Positioned(
-                  left: box[1] * c.maxWidth / 1000,
-                  top: box[0] * c.maxHeight / 1000,
-                  width: (box[3] - box[1]) * c.maxWidth / 1000,
-                  height: (box[2] - box[0]) * c.maxHeight / 1000,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.amber, width: 3),
+      final box = widget.box?.whereType<num>().toList();
+      final validBox =
+          box != null &&
+          box.length == 4 &&
+          box.every((value) => value >= 0 && value <= 1000) &&
+          box[2] > box[0] &&
+          box[3] > box[1];
+      return Column(
+        children: [
+          AspectRatio(
+            aspectRatio: s.data!,
+            child: LayoutBuilder(
+              builder: (ctx, c) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  EvidenceImage(
+                    image: MemoryImage(widget.bytes),
+                    label: 'supporting photo',
+                  ),
+                  if (showBox && validBox)
+                    Positioned(
+                      left: box[1] * c.maxWidth / 1000,
+                      top: box[0] * c.maxHeight / 1000,
+                      width: (box[3] - box[1]) * c.maxWidth / 1000,
+                      height: (box[2] - box[0]) * c.maxHeight / 1000,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.amber, width: 3),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
-        ),
+          if (validBox)
+            TextButton.icon(
+              onPressed: () => setState(() => showBox = !showBox),
+              icon: Icon(
+                showBox
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              label: Text(
+                showBox ? 'Hide detection outline' : 'Show detection outline',
+              ),
+            ),
+        ],
       );
     },
   );

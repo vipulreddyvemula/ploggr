@@ -48,55 +48,72 @@ export function fieldContract(instance: () => INestApplication) {
           .expect(200)
       ).body[0].place,
     ).toBe('Park gate');
-    const missing = () => path + '/observations/' + randomUUID();
-    await http().put(missing()).set(b.auth).send({ outcome: 'missing' }).expect(200);
-    await http()
-      .get(path)
-      .set(b.auth)
-      .expect(200)
-      .expect((r) => expect(r.body.needsChecking).toBe(true));
-    await http().put(missing()).set(b.auth).send({ outcome: 'missing' }).expect(200);
-    expect(
-      (await http().get('/api/moderation').set(a.auth)).body.reports.map((s: { id: string }) => s.id),
-    ).not.toContain(spot);
-    await http().put(missing()).set(a.auth).send({ outcome: 'missing' }).expect(200);
-    expect(
-      (await http().get('/api/moderation').set(a.auth)).body.reports.map((s: { id: string }) => s.id),
-    ).toContain(spot);
-    const prepare = async (auth: typeof a.auth) => {
-      const walk = (await http().post('/api/plogs').set(auth).expect(201)).body.id;
-      const photo = randomUUID();
-      await http()
-        .put('/api/plogs/' + walk + '/evidence/' + photo)
-        .set(auth)
-        .attach('photo', image, 'pickup.png')
-        .expect(200);
-      return photo;
+    const observation = () => path + '/observations/' + randomUUID();
+    const gps = (longitude = 72.88) => ({
+      latitude: 19.09, longitude, accuracyMeters: 5, recordedAt: new Date().toISOString(),
+    });
+    await http().put(observation()).set(b.auth).send({ outcome: 'missing', gps: gps(73.88) })
+      .expect(200).expect(r => expect(r.body.verification).toBe('unverified'));
+    await http().get(path).set(b.auth).expect(200).expect(r => expect(r.body.needsChecking).toBe(false));
+    await http().put(observation()).set(b.auth).send({ outcome: 'missing', gps: gps() })
+      .expect(200).expect(r => expect(r.body.verification).toBe('verified'));
+    await http().get(path).set(b.auth).expect(200).expect(r => expect(r.body.needsChecking).toBe(true));
+    await http().put(observation()).set(b.auth).send({ outcome: 'missing', gps: gps() }).expect(200);
+    const moderation = async () =>
+      (await http().get('/api/moderation').set(a.auth)).body.reports.map((s: { id: string }) => s.id);
+    expect(await moderation()).not.toContain(spot);
+    await http().put(observation()).set(a.auth).send({ outcome: 'missing', gps: gps() }).expect(200);
+    expect(await moderation()).toContain(spot);
+
+    const prepare = async (auth: typeof a.auth, color: string, longitude = 72.88) => {
+      const plogId = (await http().post('/api/plogs').set(auth).expect(201)).body.id;
+      const upload = async (background: string, position = longitude) => {
+        const photoId = randomUUID();
+        const capture = { source: 'camera', capturedAt: new Date().toISOString(), gps: gps(position) };
+        const bytes = await sharp({ create: { width: 5, height: 6, channels: 3, background } }).png().toBuffer();
+        await http().put('/api/plogs/' + plogId + '/evidence/' + photoId).set(auth)
+          .field('capture', JSON.stringify(capture)).attach('photo', bytes, 'pickup.png').expect(200);
+        return photoId;
+      };
+      const photoId = await upload(color);
+      const finish = () => http().post('/api/plogs/' + plogId + '/finish').set(auth)
+        .send({ endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route: [] }).expect(200);
+      return { claim: { outcome: 'cleaned', photoId, plogId }, finish, upload };
     };
-    const photo = await prepare(a.auth),
-      other = await prepare(b.auth);
-    await http().put(missing()).set(b.auth).send({ outcome: 'cleaned', photoId: photo }).expect(404);
-    await http().put(missing()).set(a.auth).send({ outcome: 'remains', photoId: photo }).expect(200);
-    await http()
-      .get(path)
-      .set(b.auth)
-      .expect(200)
-      .expect((r) => expect(r.body).toMatchObject({ status: 'open', needsChecking: false }));
-    const receipt = missing();
+    const far = await prepare(a.auth, 'orange', 73.88);
+    const farReceipt = observation();
+    await http().put(farReceipt).set(a.auth).send(far.claim).expect(200);
+    await far.finish();
+    await http().put(farReceipt).set(a.auth).send(far.claim)
+      .expect(200).expect(r => expect(r.body.verification).toBe('unverified'));
+    await http().get(path).set(b.auth).expect(200).expect(r => expect(r.body.status).toBe('open'));
+
+    const aWalk = await prepare(a.auth, 'blue');
+    const bWalk = await prepare(b.auth, 'purple');
+    await http().put(observation()).set(b.auth).send(aWalk.claim).expect(404);
+    await http().put(observation()).set(a.auth)
+      .send({ ...aWalk.claim, plogId: bWalk.claim.plogId }).expect(404);
+    const receipt = observation();
     await Promise.all([
-      http().put(receipt).set(a.auth).send({ outcome: 'cleaned', photoId: photo }).expect(200),
-      http().put(missing()).set(b.auth).send({ outcome: 'cleaned', photoId: other }).expect(200),
+      http().put(receipt).set(a.auth).send(aWalk.claim).expect(200),
+      http().put(observation()).set(b.auth).send(bWalk.claim).expect(200),
     ]);
-    await http().put(receipt).set(a.auth).send({ outcome: 'cleaned', photoId: photo }).expect(200);
-    expect(
-      await db().query('SELECT id FROM spot_observations WHERE report_id=$1 AND resolved', [spot]),
-    ).toHaveLength(1);
-    await http()
-      .get('/api/litter-reports')
-      .set(b.auth)
-      .query(bbox)
-      .expect(200)
-      .expect((r) => expect(r.body.items.map((s: { id: string }) => s.id)).not.toContain(spot));
+    const duplicate = await aWalk.upload('blue');
+    await http().put(observation()).set(a.auth).send({ ...aWalk.claim, photoId: duplicate }).expect(422);
+    await http().get(path).set(b.auth).expect(200).expect(r => expect(r.body.status).toBe('open'));
+    await Promise.all([aWalk.finish(), bWalk.finish()]);
+    await http().put(receipt).set(a.auth).send(aWalk.claim).expect(200);
+    await http().put(observation()).set(a.auth).send(aWalk.claim).expect(422);
+    expect(await db().query('SELECT id FROM spot_observations WHERE report_id=$1 AND resolved', [spot])).toHaveLength(1);
+    const details = await Promise.all([aWalk.claim, bWalk.claim].map((claim, index) =>
+      http().get('/api/plogs/' + claim.plogId).set(index === 0 ? a.auth : b.auth).expect(200)));
+    expect(details.map(response => response.body.cleanupClaims)).toEqual(expect.arrayContaining([
+      { verified: 1, unverified: 0 }, { verified: 0, unverified: 0, alreadyCollected: 1 },
+    ]));
+    const totals = await Promise.all([a.auth, b.auth].map(auth => http().get('/api/plogs/summary').set(auth).expect(200)));
+    expect(totals.map(response => response.body.verifiedCleanups ?? 0).sort()).toEqual([0, 1]);
+    await http().get('/api/litter-reports').set(b.auth).query(bbox).expect(200)
+      .expect(r => expect(r.body.items.map((s: { id: string }) => s.id)).not.toContain(spot));
   });
 
   it('saves a private, unpinned pickup then analyzes, reviews and scores it under an explicit policy', async () => {

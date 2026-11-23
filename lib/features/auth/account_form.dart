@@ -69,7 +69,7 @@ class _AccountFormState extends ConsumerState<AccountForm> {
     final signup = widget.signup;
     final ready = ref.watch(sessionControllerProvider).phase.canSignIn;
     return AppPage(
-      title: '',
+      title: signup ? 'Create your account' : 'Sign in',
       backTo: signup ? AppRoutes.login : AppRoutes.onboarding,
       child: AutofillGroup(
         child: Form(
@@ -93,10 +93,8 @@ class _AccountFormState extends ConsumerState<AccountForm> {
               ] else ...[
                 const Center(child: PloggrLogo(size: 70)),
                 const SizedBox(height: 35),
-                const Text('Welcome back!', style: AppText.title),
-                const SizedBox(height: 6),
                 const Text(
-                  'Log in to continue your\nplogging journey 🌱',
+                  'Use the email you registered with.',
                   style: AppText.body,
                 ),
                 const SizedBox(height: 24),
@@ -156,7 +154,7 @@ class _AccountFormState extends ConsumerState<AccountForm> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Semantics(liveRegion: true, child: Text(_error!)),
+                  child: AppNotice(_error!, status: AppStatus.failure),
                 ),
               const SizedBox(height: 24),
               PrimaryButton(

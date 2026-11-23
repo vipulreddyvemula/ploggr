@@ -7,7 +7,7 @@ import { User } from '../users/user.entity';
 @Entity('plogs')
 @Index('plogs_one_active_per_user', ['user'], { unique: true, where: "status = 'active'" })
 @Check('plogs_lifecycle_check', `(status = 'active' AND ended_at IS NULL) OR
-  (status = 'completed' AND ended_at IS NOT NULL AND ended_at >= started_at)`)
+  (status IN ('completed','cancelled','abandoned') AND ended_at IS NOT NULL AND ended_at >= started_at)`)
 @Check('plogs_duration_check', 'duration_seconds >= 0')
 @Check('plogs_distance_check', "distance_meters >= 0 AND distance_meters < 'Infinity'::double precision")
 export class Plog {
@@ -20,7 +20,16 @@ export class Plog {
   user!: User;
 
   @Column('text', { default: 'active' })
-  status!: 'active' | 'completed';
+  status!: 'active' | 'completed' | 'cancelled' | 'abandoned';
+
+  @Column('text', { name: 'finish_fingerprint', nullable: true })
+  finishFingerprint!: string | null;
+
+  @Column('uuid', { name: 'recording_device', nullable: true })
+  recordingDevice!: string | null;
+
+  @Column('timestamptz', { name: 'completed_at', nullable: true })
+  completedAt!: Date | null;
 
   @Column('timestamptz', { name: 'started_at', default: () => 'now()' })
   startedAt!: Date;
@@ -54,4 +63,10 @@ export class PlogRoutePoint {
 
   @Column('geography', { spatialFeatureType: 'Point', srid: 4326 })
   location!: Point;
+
+  @Column('timestamptz', { name: 'recorded_at', nullable: true })
+  recordedAt!: Date | null;
+
+  @Column('double precision', { name: 'accuracy_meters', nullable: true })
+  accuracyMeters!: number | null;
 }

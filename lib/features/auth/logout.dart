@@ -10,6 +10,11 @@ Future<void> logoutFromDevice(
   final messenger = ScaffoldMessenger.of(context);
   try {
     await sessions.logout();
+    if (messenger.mounted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Signed out of Ploggr.')),
+      );
+    }
   } on AuthRequestFailure {
     if (messenger.mounted) {
       messenger.showSnackBar(

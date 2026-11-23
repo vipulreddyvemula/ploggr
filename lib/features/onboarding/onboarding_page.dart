@@ -7,9 +7,14 @@ import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
-  const OnboardingPage({super.key, this.initialPage = 0, this.live = false});
+  const OnboardingPage({
+    super.key,
+    this.initialPage = 0,
+    this.live = false,
+    this.replay = false,
+  });
   final int initialPage;
-  final bool live;
+  final bool live, replay;
   @override
   ConsumerState<OnboardingPage> createState() => _OnboardingPageState();
 }
@@ -35,6 +40,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   Future<void> finish() async {
+    if (widget.replay) {
+      Navigator.pop(context);
+      return;
+    }
     if (widget.live) {
       try {
         await ref.read(sessionStoreProvider)?.markOnboarding();
@@ -64,10 +73,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   child: _page < 2
                       ? TextButton(
                           onPressed: finish,
-                          child: const Text(
+                          child: Text(
                             'Skip',
                             style: TextStyle(
-                              color: AppColors.ink,
+                              color: context.colors.onSurface,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -106,8 +115,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         Padding(
                           padding: AppSpace.page,
                           child: Text(
-                            widget.live && index == 1
-                                ? 'Track your walk'
+                            widget.live
+                                ? [
+                                    'Pick up litter on a Plog',
+                                    'Keep a record of the cleanup',
+                                    'Report a litter sighting',
+                                  ][index]
                                 : _titles[index],
                             textAlign: TextAlign.center,
                             style: AppText.title,
@@ -117,8 +130,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         Padding(
                           padding: AppSpace.page,
                           child: Text(
-                            widget.live && index == 1
-                                ? 'Record your route and photograph litter you collect.'
+                            widget.live
+                                ? [
+                                    'Start a Plog to time your walk. Allow location when you want to record a route.',
+                                    'Photograph each pickup to save private evidence. Ploggr asks for camera access when you open it.',
+                                    'Add a photo and confirm a pin to show other ploggers where to find the litter.',
+                                  ][index]
                                 : _descriptions[index],
                             textAlign: TextAlign.center,
                             style: AppText.body.copyWith(fontSize: 17),
@@ -137,7 +154,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         children: [
                           _dots(),
                           const SizedBox(height: 22),
-                          PrimaryButton('Get Started', onPressed: finish),
+                          PrimaryButton(
+                            widget.replay ? 'Done' : 'Get Started',
+                            onPressed: finish,
+                          ),
                         ],
                       )
                     : Row(
@@ -146,10 +166,16 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                           Expanded(child: _dots()),
                           IconButton.filled(
                             tooltip: 'Next onboarding page',
-                            onPressed: () => _controller.nextPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            ),
+                            onPressed: () {
+                              if (MediaQuery.disableAnimationsOf(context)) {
+                                _controller.jumpToPage(_page + 1);
+                              } else {
+                                _controller.nextPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOutCubic,
+                                );
+                              }
+                            },
                             icon: const Icon(Icons.arrow_forward_rounded),
                           ),
                         ],
@@ -174,7 +200,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: i == _page ? AppColors.primary : const Color(0xFFD3E8C3),
+            color: i == _page
+                ? context.colors.primary
+                : context.colors.outlineVariant,
           ),
         ),
       ),

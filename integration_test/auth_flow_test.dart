@@ -164,6 +164,7 @@ void main() {
         client.interceptors.add(observer);
         try {
           await tap('Log out');
+          await tap('Confirm logout');
           expect(
             await acknowledged.future.timeout(const Duration(seconds: 15)),
             204,

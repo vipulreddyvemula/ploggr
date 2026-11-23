@@ -12,6 +12,7 @@ import '../community/field_data.dart';
 import '../spots/spot_api.dart';
 import 'activity_overview.dart';
 import '../plogging/data/plog_drafts.dart';
+import '../plogging/activity_page.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -37,6 +38,20 @@ class HomePage extends ConsumerWidget {
     final name = live
         ? (profile?['name'] as String?)
         : ref.watch(profileProvider).split(' ').first;
+    void openPlog() {
+      if (live) {
+        ref.read(activeTrackProvider.notifier).startOrResume();
+      } else if (!session!.active) {
+        ref.read(sessionProvider.notifier).start();
+      }
+      openPage(context, AppRoutes.session);
+    }
+
+    final start = PrimaryButton(
+      resume ? 'Resume Plog Session' : 'Start Plog Session',
+      icon: Icons.directions_run_rounded,
+      onPressed: openPlog,
+    );
     return Scaffold(
       bottomNavigationBar: const BottomNavBar(),
       body: SafeArea(
@@ -51,7 +66,11 @@ class HomePage extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        name == null ? 'Hi! 👋' : 'Hi, $name! 👋',
+                        live
+                            ? (name?.trim().isNotEmpty == true
+                                  ? 'Hi, $name'
+                                  : 'Ploggr')
+                            : 'Hi, $name! 👋',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.title.copyWith(fontSize: 23),
@@ -74,9 +93,31 @@ class HomePage extends ConsumerWidget {
                     ),
                   ],
                 ),
+                if (live) ...[
+                  if (resume)
+                    const AppNotice(
+                      'Pick up where you left off on this device.',
+                    ),
+                  start,
+                  Wrap(
+                    spacing: AppSpace.sm,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => openPage(context, AppRoutes.report),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: const Text('Report litter'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => switchPage(context, AppRoutes.map),
+                        icon: const Icon(Icons.map_outlined),
+                        label: const Text('Explore'),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
                 EcoCard(
-                  color: AppColors.paleGreen,
+                  color: context.colors.primaryContainer,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 17,
@@ -93,7 +134,7 @@ class HomePage extends ConsumerWidget {
                             const SizedBox(height: 3),
                             Text(
                               live
-                                  ? (totals == null
+                                  ? (totals == null || totals.tracked == 0
                                         ? '—'
                                         : formatWalkDistance(totals.meters))
                                   : '${impact!.kg.toStringAsFixed(1)} kg',
@@ -142,41 +183,26 @@ class HomePage extends ConsumerWidget {
                           value: '5',
                           label: 'Badges',
                           icon: Icons.workspace_premium_rounded,
-                          color: AppColors.gold,
+                          color: context.goldIcon,
                           onTap: () => openPage(context, AppRoutes.badges),
                         ),
                       ),
                     ],
                   ),
                 const SizedBox(height: 15),
-                PrimaryButton(
-                  resume ? 'Resume Plog Session' : 'Start Plog Session',
-                  icon: Icons.directions_run_rounded,
-                  onPressed: () {
-                    if (live) {
-                      ref.read(activeTrackProvider.notifier).startOrResume();
-                    } else if (!session!.active) {
-                      ref.read(sessionProvider.notifier).start();
-                    }
-                    openPage(context, AppRoutes.session);
-                  },
-                ),
-                const SizedBox(height: 10),
-                if (live)
-                  OutlinedButton.icon(
-                    onPressed: () => openPage(context, AppRoutes.report),
-                    icon: const Icon(Icons.add_location_alt_outlined),
-                    label: const Text('Report litter'),
-                  )
-                else
+                if (!live) ...[
+                  start,
+                  const SizedBox(height: 10),
                   PrimaryButton(
                     'Scan Litter',
                     icon: Icons.qr_code_scanner_rounded,
                     onPressed: () => openPage(context, AppRoutes.scan),
                   ),
+                ],
                 if (live) ...[
                   const SectionTitle('Latest report'),
                   const _LatestReport(),
+                  if (totals != null && totals.count > 0) const _RecentPlog(),
                 ] else ...[
                   const SectionTitle('Ongoing Challenge'),
                   EcoCard(
@@ -186,13 +212,13 @@ class HomePage extends ConsumerWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.all(9),
-                          decoration: const BoxDecoration(
-                            color: AppColors.paleGreen,
+                          decoration: BoxDecoration(
+                            color: context.colors.primaryContainer,
                             borderRadius: AppRadius.small,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.directions_run_rounded,
-                            color: AppColors.primary,
+                            color: context.colors.primary,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -215,8 +241,9 @@ class HomePage extends ConsumerWidget {
                                 child: LinearProgressIndicator(
                                   value: (impact!.kg / 20).clamp(0, 1),
                                   minHeight: 6,
-                                  backgroundColor: AppColors.paleGreen,
-                                  color: AppColors.leaf,
+                                  backgroundColor:
+                                      context.colors.primaryContainer,
+                                  color: context.colors.primary,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -286,7 +313,7 @@ class HomePage extends ConsumerWidget {
       onTap: () => openPage(context, route),
       child: Column(
         children: [
-          Icon(icon, color: AppColors.primary, size: 23),
+          Icon(icon, color: context.colors.primary, size: 23),
           const SizedBox(height: 6),
           Text(
             label,
@@ -337,13 +364,13 @@ class _LatestReport extends ConsumerWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(9),
-            decoration: const BoxDecoration(
-              color: AppColors.paleGreen,
+            decoration: BoxDecoration(
+              color: context.colors.primaryContainer,
               borderRadius: AppRadius.small,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.location_on_outlined,
-              color: AppColors.primary,
+              color: context.colors.primary,
             ),
           ),
           const SizedBox(width: 12),
@@ -359,6 +386,38 @@ class _LatestReport extends ConsumerWidget {
           const Icon(Icons.chevron_right_rounded, size: 20),
         ],
       ),
+    );
+  }
+}
+
+class _RecentPlog extends ConsumerWidget {
+  const _RecentPlog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final plog = ref.watch(plogHistoryProvider(null)).value?.items.firstOrNull;
+    if (plog == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionTitle('Recent Plog'),
+        EcoCard(
+          onTap: () => openPage(context, '${AppRoutes.activity}/${plog.id}'),
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.directions_walk),
+            title: Text(
+              MaterialLocalizations.of(
+                context,
+              ).formatMediumDate(plog.startedAt.toLocal()),
+            ),
+            subtitle: Text(
+              formatWalkSummary(plog.seconds, meters: plog.meters),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          ),
+        ),
+      ],
     );
   }
 }

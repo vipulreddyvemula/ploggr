@@ -66,7 +66,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 Text(
                   'Change tomorrow.',
                   style: AppText.heading.copyWith(
-                    color: AppColors.primary,
+                    color: context.colors.primary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

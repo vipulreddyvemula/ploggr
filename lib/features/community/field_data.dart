@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../core/network/protected_api.dart';
+import '../../shared/widgets/ploggr_ui.dart';
 import '../auth/session/session_controller.dart';
 
 final fieldData = FutureProvider.autoDispose.family<Object?, String>((
@@ -23,11 +24,18 @@ class FieldData extends ConsumerWidget {
       .watch(fieldData(path))
       .when(
         data: (d) => render(d),
-        loading: () => const LinearProgressIndicator(semanticsLabel: 'Loading'),
-        error: (_, _) => TextButton.icon(
-          onPressed: () => ref.invalidate(fieldData(path)),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Could not load · Retry'),
+        loading: () => const AppLoading('Loading'),
+        error: (error, _) => AppNotice(
+          switch (error) {
+            ProtectedApiFailure(status: null) =>
+              'Check your connection and try again.',
+            ProtectedApiFailure(status: 403) =>
+              'You don’t have access to this content.',
+            _ => 'Could not load this content.',
+          },
+          status: AppStatus.failure,
+          actionLabel: 'Retry',
+          onAction: () => ref.invalidate(fieldData(path)),
         ),
       );
 }

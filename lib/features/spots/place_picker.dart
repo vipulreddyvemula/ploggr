@@ -34,16 +34,30 @@ Future<ChosenPlace?> choosePlace(
   BuildContext context, {
   ChosenPlace? initial,
   String title = 'Choose spot',
+  ValueChanged<bool>? onLocationSource,
+  bool initialGps = false,
 }) => Navigator.of(context).push<ChosenPlace>(
   MaterialPageRoute(
-    builder: (_) => _PlacePage(initial: initial, title: title),
+    builder: (_) => _PlacePage(
+      initial: initial,
+      title: title,
+      onLocationSource: onLocationSource,
+      initialGps: initialGps,
+    ),
   ),
 );
 
 class _PlacePage extends ConsumerStatefulWidget {
-  const _PlacePage({required this.initial, required this.title});
+  const _PlacePage({
+    required this.initial,
+    required this.title,
+    required this.onLocationSource,
+    required this.initialGps,
+  });
   final ChosenPlace? initial;
   final String title;
+  final ValueChanged<bool>? onLocationSource;
+  final bool initialGps;
   @override
   ConsumerState<_PlacePage> createState() => _PlaceState();
 }
@@ -53,6 +67,7 @@ class _PlaceState extends ConsumerState<_PlacePage> {
   RouteFix? focus, center, gpsPoint;
   String label = '', notice = '';
   double? accuracy;
+  DateTime? locatedAt;
   var results = <Map>[];
   bool locating = false,
       searching = false,
@@ -61,6 +76,7 @@ class _PlaceState extends ConsumerState<_PlacePage> {
   Timer? debounce;
   int request = 0, cameraKey = 0;
   bool movingPin = false;
+  late bool gpsSelected = widget.initialGps;
   @override
   void initState() {
     super.initState();
@@ -75,14 +91,17 @@ class _PlaceState extends ConsumerState<_PlacePage> {
       if (!mounted || interacted) return;
       if (saved != null) {
         setState(() {
-          focus = center = saved.point;
-          label = saved.name;
+          focus = saved.point;
+          cameraKey++;
         });
         return;
       }
       final cached = await ref.read(locationSourceProvider).cachedPoint();
       if (mounted && !interacted && cached != null) {
-        setState(() => focus = cached);
+        setState(() {
+          focus = cached;
+          cameraKey++;
+        });
       }
     } catch (_) {
       // Search and manual pin placement work without a saved area.
@@ -118,7 +137,8 @@ class _PlaceState extends ConsumerState<_PlacePage> {
     }
   }
 
-  void move(RouteFix p, String name) {
+  void move(RouteFix p, String name, {bool gps = false}) {
+    if (accepting) return;
     FocusManager.instance.primaryFocus?.unfocus();
     debounce?.cancel();
     request++;
@@ -126,6 +146,7 @@ class _PlaceState extends ConsumerState<_PlacePage> {
     setState(() {
       movingPin = false;
       focus = center = p;
+      gpsSelected = gps;
       label = name;
       interacted = true;
       results = [];
@@ -149,7 +170,8 @@ class _PlaceState extends ConsumerState<_PlacePage> {
       if (!mounted || version != request) return;
       gpsPoint = (latitude: fix.latitude, longitude: fix.longitude);
       accuracy = fix.accuracy;
-      move(gpsPoint!, '');
+      locatedAt = fix.timestamp;
+      move(gpsPoint!, '', gps: true);
     } catch (_) {
       if (mounted && version == request) {
         setState(
@@ -164,7 +186,8 @@ class _PlaceState extends ConsumerState<_PlacePage> {
 
   Future<void> accept() async {
     final p = center;
-    if (p == null) return;
+    if (p == null || accepting || movingPin) return;
+    final selectedUsingGps = gpsSelected;
     setState(() => accepting = true);
     var name = label;
     if (name.isEmpty) {
@@ -181,7 +204,10 @@ class _PlaceState extends ConsumerState<_PlacePage> {
     try {
       await rememberArea(ref.read(plogDraftsProvider), place);
     } catch (_) {}
-    if (mounted) Navigator.pop(context, place);
+    if (mounted) {
+      widget.onLocationSource?.call(selectedUsingGps);
+      Navigator.pop(context, place);
+    }
   }
 
   @override
@@ -195,6 +221,7 @@ class _PlaceState extends ConsumerState<_PlacePage> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: TextField(
               controller: search,
+              enabled: !accepting,
               decoration: const InputDecoration(
                 labelText: 'Search a park, street or landmark',
                 prefixIcon: Icon(Icons.search),
@@ -217,7 +244,13 @@ class _PlaceState extends ConsumerState<_PlacePage> {
               },
             ),
           ),
-          if (searching) const LinearProgressIndicator(),
+          if (searching)
+            const LinearProgressIndicator(semanticsLabel: 'Searching places'),
+          if (notice.isNotEmpty && MediaQuery.viewInsetsOf(context).bottom > 0)
+            Padding(
+              padding: AppSpace.page,
+              child: Text(notice, style: AppText.caption),
+            ),
           if (results.isNotEmpty)
             Flexible(
               child: ListView(
@@ -236,7 +269,7 @@ class _PlaceState extends ConsumerState<_PlacePage> {
               ),
             ),
           Expanded(
-            flex: 2,
+            flex: MediaQuery.sizeOf(context).height < 480 ? 1 : 2,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -244,11 +277,12 @@ class _PlaceState extends ConsumerState<_PlacePage> {
                   child: SpotMap(
                     focus: focus,
                     cameraKey: cameraKey,
+                    interactive: !accepting,
                     accuracy: accuracy,
                     accuracyPoint: gpsPoint,
                     onPin: (p) => move(p, ''),
                     onPan: () {
-                      if (movingPin) return;
+                      if (movingPin || accepting) return;
                       setState(() {
                         movingPin = true;
                         request++;
@@ -263,19 +297,20 @@ class _PlaceState extends ConsumerState<_PlacePage> {
                       if (movingPin && mounted) {
                         setState(() {
                           center = p;
+                          gpsSelected = false;
                           movingPin = false;
                         });
                       }
                     },
                   ),
                 ),
-                const IgnorePointer(
+                IgnorePointer(
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 40),
+                    padding: const EdgeInsets.only(bottom: 40),
                     child: Icon(
                       Icons.location_pin,
                       size: 44,
-                      color: AppColors.forest,
+                      color: context.colors.onPrimaryContainer,
                     ),
                   ),
                 ),
@@ -283,39 +318,59 @@ class _PlaceState extends ConsumerState<_PlacePage> {
             ),
           ),
           if (MediaQuery.viewInsetsOf(context).bottom == 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    notice.isNotEmpty
-                        ? notice
-                        : label.isNotEmpty
-                        ? label
-                        : 'Tap or move the map to place the pin.',
-                    style: AppText.label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  TextButton.icon(
-                    onPressed: locating ? null : locate,
-                    icon: const Icon(Icons.my_location),
-                    label: Text(
-                      locating
-                          ? 'Finding location…'
-                          : accuracy == null
-                          ? 'Use my location'
-                          : 'Use my location · GPS ±${accuracy!.round()} m',
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              notice.isNotEmpty
+                                  ? notice
+                                  : label.isNotEmpty
+                                  ? label
+                                  : 'Tap or move the map to place the pin.',
+                              style: AppText.label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (accuracy == null && notice.isEmpty)
+                              const Text(
+                                'Location access lets you place the pin near you. You can also place it by hand.',
+                                style: AppText.caption,
+                              ),
+                            if (locatedAt case final DateTime time)
+                              Text(
+                                'Blue dot · GPS ±${accuracy?.round() ?? 0} m · fix at ${TimeOfDay.fromDateTime(time.toLocal()).format(context)}',
+                                style: AppText.caption,
+                              ),
+                            TextButton.icon(
+                              onPressed: locating || accepting ? null : locate,
+                              icon: const Icon(Icons.my_location),
+                              label: Text(
+                                locating
+                                    ? 'Finding location…'
+                                    : 'Use my location',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                  PrimaryButton(
-                    accepting ? 'Saving location…' : 'Use this spot',
-                    onPressed: center != null && !movingPin && !accepting
-                        ? accept
-                        : null,
-                  ),
-                ],
+                    PrimaryButton(
+                      accepting ? 'Saving location…' : 'Use this spot',
+                      onPressed: center != null && !movingPin && !accepting
+                          ? accept
+                          : null,
+                    ),
+                  ],
+                ),
               ),
             ),
         ],

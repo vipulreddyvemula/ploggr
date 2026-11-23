@@ -1,9 +1,12 @@
 import {
   Check, Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique,
 } from 'typeorm';
+import type { CaptureMetadata } from './capture-metadata';
 import { Plog } from '../plogs/plog.entity';
 
 @Entity('garbage_evidence')
+@Index('garbage_evidence_sha_idx', ['sha256'])
+@Index('garbage_evidence_phash_bucket', { synchronize: false })
 @Unique('garbage_evidence_storage_key_key', ['storageKey'])
 @Check('garbage_evidence_reference_check', "storage_key <> '' AND storage_key = btrim(storage_key)")
 @Check('garbage_evidence_metadata_check', "byte_size > 0 AND media_type <> '' AND sha256 ~ '^[0-9a-f]{64}$'")
@@ -27,6 +30,12 @@ export class GarbageEvidence {
 
   @Column('text')
   sha256!: string;
+
+  @Column('jsonb', { nullable: true })
+  capture!: CaptureMetadata | null;
+
+  @Column('text', { name: 'perceptual_hash', nullable: true })
+  perceptualHash!: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt!: Date;

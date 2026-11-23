@@ -113,88 +113,96 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets(
-    'live dashboard, profile and community present signed-in data in the original layouts',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(360, 740);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      final report = Spot.fromJson({
-        'id': 'spot',
-        'category': 'Metal',
-        'notes': 'Under the bridge',
-        'status': 'open',
-        'mine': true,
-        'photoCount': 1,
-        'latitude': 10,
-        'longitude': 20,
-      });
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            fieldData(
-              'profile',
-            ).overrideWith((_) async => {'name': 'Asha', 'moderator': false}),
-            fieldData(
-              'community/posts?mine=false',
-            ).overrideWith((_) async => {'items': [], 'next': null}),
-            fieldData('leaderboard?period=week').overrideWith(
-              (_) async => {
-                'items': [],
-                'mine': null,
-                'rules': null,
-                'pending': 0,
-              },
+  testWidgets('live dashboard, profile and community present signed-in data', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 740);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final report = Spot.fromJson({
+      'id': 'spot',
+      'category': 'Metal',
+      'notes': 'Under the bridge',
+      'status': 'open',
+      'mine': true,
+      'photoCount': 1,
+      'latitude': 10,
+      'longitude': 20,
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fieldData(
+            'profile',
+          ).overrideWith((_) async => {'name': 'Asha', 'moderator': false}),
+          fieldData(
+            'community/posts?mine=false',
+          ).overrideWith((_) async => {'items': [], 'next': null}),
+          fieldData('leaderboard?period=week').overrideWith(
+            (_) async => {
+              'items': [],
+              'mine': null,
+              'rules': null,
+              'pending': 0,
+            },
+          ),
+          initialLocationProvider.overrideWithValue('/home'),
+          sessionStoreProvider.overrideWithValue(
+            MemoryStore()..value = StoredSession(token),
+          ),
+          sessionApiProvider.overrideWithValue(FakeApi()),
+          totalsProvider.overrideWith(
+            (ref) async => (
+              count: 2,
+              meters: 3000.0,
+              reports: 1,
+              tracked: 2,
+              verifiedCleanups: 0,
             ),
-            initialLocationProvider.overrideWithValue('/home'),
-            sessionStoreProvider.overrideWithValue(
-              MemoryStore()..value = StoredSession(token),
-            ),
-            sessionApiProvider.overrideWithValue(FakeApi()),
-            totalsProvider.overrideWith(
-              (ref) async => (count: 2, meters: 3000.0, reports: 1, tracked: 2),
-            ),
-            mySpotsProvider(
-              null,
-            ).overrideWith((ref) async => (items: [report], next: null)),
-            exploreProvider(
-              world,
-            ).overrideWith((ref) async => (items: <Spot>[], truncated: false)),
-          ],
-          child: const PloggrApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Hi, Asha! 👋'), findsOneWidget);
-      expect(find.byType(LeafSprig), findsOneWidget);
-      expect(find.byType(StatTile), findsNWidgets(3));
-      expect(find.text('3.00 km'), findsOneWidget);
-      expect(find.text('1.50 km'), findsOneWidget);
-      expect(find.text('Campus Clean-up'), findsNothing);
+          ),
+          mySpotsProvider(
+            null,
+          ).overrideWith((ref) async => (items: [report], next: null)),
+          exploreProvider(
+            world,
+          ).overrideWith((ref) async => (items: <Spot>[], truncated: false)),
+        ],
+        child: const PloggrApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Hi, Asha'), findsOneWidget);
+    expect(find.text('Start Plog Session').hitTestable(), findsOneWidget);
+    expect(find.text('Report litter').hitTestable(), findsOneWidget);
+    expect(find.text('Explore').hitTestable(), findsOneWidget);
+    expect(find.byType(LeafSprig), findsOneWidget);
+    expect(find.byType(StatTile), findsNWidgets(3));
+    expect(find.text('3.00 km'), findsOneWidget);
+    expect(find.text('1.50 km'), findsOneWidget);
+    expect(find.text('Campus Clean-up'), findsNothing);
 
-      await tester.scrollUntilVisible(
-        find.text('Metal litter'),
-        150,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('Needs cleanup'), findsOneWidget);
-      await press(tester, 'Community');
-      expect(find.text('Community posts'), findsOneWidget);
-      expect(
-        find.text('No posts yet. Share a cleanup with the community.'),
-        findsOneWidget,
-      );
-      await press(tester, 'Leaderboard');
-      expect(find.text('Unranked'), findsOneWidget);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await press(tester, 'Profile');
-      expect(find.text('a@example.test'), findsOneWidget);
-      expect(find.byType(StatTile), findsNWidgets(3));
-      expect(find.text('3.00 km'), findsOneWidget);
-      expect(find.byType(PreviewNote), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    await tester.scrollUntilVisible(
+      find.text('Metal litter'),
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Needs cleanup'), findsOneWidget);
+    await press(tester, 'Community');
+    expect(find.text('Community posts'), findsOneWidget);
+    expect(
+      find.text('No posts yet. Share a cleanup with the community.'),
+      findsOneWidget,
+    );
+    await press(tester, 'Leaderboard');
+    expect(find.text('Unranked'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await press(tester, 'Profile');
+    expect(find.text('a@example.test'), findsOneWidget);
+    expect(find.byType(StatTile), findsNWidgets(3));
+    expect(find.text('3.00 km'), findsOneWidget);
+    expect(find.byType(PreviewNote), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -79,8 +79,8 @@ class InSessionPage extends ConsumerWidget {
                       IconButton.filled(
                         tooltip: 'View litter map',
                         style: IconButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.primary,
+                          backgroundColor: context.colors.surface,
+                          foregroundColor: context.colors.primary,
                         ),
                         onPressed: () => openPage(context, AppRoutes.map),
                         icon: const Icon(Icons.map_outlined),
@@ -90,7 +90,8 @@ class InSessionPage extends ConsumerWidget {
                             ? 'Resume session'
                             : 'Pause session',
                         style: IconButton.styleFrom(
-                          backgroundColor: AppColors.coral,
+                          backgroundColor: context.colors.error,
+                          foregroundColor: context.colors.onError,
                           minimumSize: const Size(68, 68),
                           side: const BorderSide(color: Colors.white, width: 4),
                         ),
@@ -111,8 +112,8 @@ class InSessionPage extends ConsumerWidget {
                       IconButton.filled(
                         tooltip: 'End session',
                         style: IconButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.ink,
+                          backgroundColor: context.colors.surface,
+                          foregroundColor: context.colors.onSurface,
                         ),
                         onPressed: finish,
                         icon: const Icon(Icons.stop_rounded),
@@ -131,13 +132,13 @@ class InSessionPage extends ConsumerWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFF1D7),
+                  decoration: BoxDecoration(
+                    color: context.colors.errorContainer,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.shopping_bag_outlined,
-                    color: AppColors.coral,
+                    color: context.colors.onErrorContainer,
                   ),
                 ),
                 const SizedBox(width: 10),

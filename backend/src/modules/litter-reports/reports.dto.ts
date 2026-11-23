@@ -1,3 +1,5 @@
+import { Type } from 'class-transformer';
+import { GpsSample } from '../evidence/capture-metadata';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -10,9 +12,14 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
 
 export class SpotFields {
+  @IsOptional() @IsString() @MaxLength(4096) captures?: string;
+  @IsOptional() @IsUUID('4') previousReportId?: string;
+  @IsOptional() @IsIn(['gps','manual']) locationSource?: 'gps' | 'manual';
+
   @IsOptional() @IsString() @MaxLength(160) place?: string;
   @IsLatitude() latitude!: string;
   @IsLongitude() longitude!: string;
@@ -38,8 +45,10 @@ export class MapQuery {
 }
 
 export class ObservationInput {
-  @IsIn(['cleaned','remains','missing']) outcome!: 'cleaned' | 'remains' | 'missing';
+  @IsIn(['cleaned','remains','missing','present']) outcome!: 'cleaned' | 'remains' | 'missing' | 'present';
   @IsOptional() @IsUUID('4') photoId?: string;
+  @IsOptional() @IsUUID('4') plogId?: string;
+  @IsOptional() @ValidateNested() @Type(() => GpsSample) gps?: GpsSample;
 }
 
 export class ReportPageQuery {

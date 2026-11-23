@@ -7,6 +7,8 @@ import '../../../core/config/app_config_provider.dart';
 import '../../../core/network/protected_api.dart';
 import '../../auth/session/session_controller.dart';
 import 'plog_track.dart';
+import 'location_source.dart';
+import 'photo_capture.dart';
 import '../../spots/spot.dart';
 
 class PlogDrafts {
@@ -16,12 +18,15 @@ class PlogDrafts {
 
   Future<Database> _database() async => openDatabase(
     '${await getDatabasesPath()}/ploggr-tracks/drafts.db',
-    version: 5,
+    version: 8,
     onUpgrade: (db, from, to) async {
       if (from < 2) await _addPhotos(db);
       if (from < 3) await _addSpots(db);
       if (from < 4) await _addFieldData(db);
       if (from < 5) await _addPickupPlace(db);
+      if (from < 6) await _addCaptureMetadata(db);
+      if (from < 7) await _addPendingPhotoRemovals(db);
+      if (from < 8) await _addPhotoReplacement(db);
     },
     onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
     onCreate: (db, _) async {
@@ -36,8 +41,26 @@ class PlogDrafts {
       await _addSpots(db);
       await _addFieldData(db);
       await _addPickupPlace(db);
+      await _addCaptureMetadata(db);
+      await _addPendingPhotoRemovals(db);
+      await _addPhotoReplacement(db);
     },
   );
+
+  static Future<void> _addPhotoReplacement(Database db) =>
+      db.execute('ALTER TABLE photos ADD COLUMN replaces TEXT');
+
+  static Future<void> _addPendingPhotoRemovals(Database db) => db.execute(
+    'CREATE TABLE photo_removals(scope TEXT NOT NULL REFERENCES drafts(scope) ON DELETE CASCADE, plog_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(scope,id))',
+  );
+
+  static Future<void> _addCaptureMetadata(Database db) async {
+    await db.execute('ALTER TABLE fixes ADD COLUMN recorded TEXT');
+    await db.execute('ALTER TABLE fixes ADD COLUMN accuracy REAL');
+    await db.execute('ALTER TABLE photos ADD COLUMN capture TEXT');
+    await db.execute('ALTER TABLE observations ADD COLUMN gps TEXT');
+    await db.execute('ALTER TABLE observations ADD COLUMN receipt TEXT');
+  }
 
   static Future<void> _addPickupPlace(Database db) => db.execute(
     "ALTER TABLE pickups ADD COLUMN place TEXT NOT NULL DEFAULT ''",
@@ -55,6 +78,25 @@ class PlogDrafts {
     );
   }
 
+  Future<String> recordingDevice() => _ordered(
+    (db) => db.transaction((tx) async {
+      const name = 'recording-device';
+      final rows = await tx.query(
+        'preferences',
+        where: 'scope=? AND name=?',
+        whereArgs: [scope, name],
+      );
+      if (rows.isNotEmpty) return rows.single['value'] as String;
+      final id = const Uuid().v4();
+      await tx.insert('preferences', {
+        'scope': scope,
+        'name': name,
+        'value': id,
+      });
+      return id;
+    }),
+  );
+
   Future<String?> preference(String name) => _ordered(
     (db) async =>
         (await db.query(
@@ -71,20 +113,34 @@ class PlogDrafts {
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   });
-  Future<void> queueObservation(
+  Future<String> queueObservation(
     String report,
     String outcome, {
     String? plog,
     String? photo,
+    GpsSample? gps,
   }) => _ordered((db) async {
+    final id = const Uuid().v4();
     await db.insert('observations', {
-      'id': const Uuid().v4(),
+      'id': id,
       'scope': scope,
       'report': report,
       'outcome': outcome,
       'plog': plog,
       'photo': photo,
+      'gps': gps == null ? null : jsonEncode(gps.toJson()),
     });
+    return id;
+  });
+
+  Future<String?> observationReceipt(String id) => _ordered((db) async {
+    final rows = await db.query(
+      'observations',
+      columns: ['receipt'],
+      where: 'scope=? AND id=?',
+      whereArgs: [scope, id],
+    );
+    return rows.firstOrNull?['receipt'] as String?;
   });
   Future<List<Map<String, Object?>>> observations({
     String? plog,
@@ -101,19 +157,15 @@ class PlogDrafts {
       orderBy: 'rowid',
     ),
   );
-  Future<void> acknowledge(String id) => _ordered((db) async {
-    await db.update(
-      'observations',
-      {'sent': 1},
-      where: 'scope=? AND id=?',
-      whereArgs: [scope, id],
-    );
-    await db.delete(
-      'observations',
-      where: 'scope=? AND id=? AND plog IS NULL',
-      whereArgs: [scope, id],
-    );
-  });
+  Future<void> acknowledge(String id, String verification) =>
+      _ordered((db) async {
+        await db.update(
+          'observations',
+          {'sent': 1, 'receipt': verification, 'gps': null},
+          where: 'scope=? AND id=?',
+          whereArgs: [scope, id],
+        );
+      });
 
   static Future<void> _addPhotos(Database db) async {
     await db.execute(
@@ -162,6 +214,7 @@ class PlogDrafts {
           'spot': jsonEncode(spot.toJson()),
           'media_type': p.type,
           'bytes': p.bytes,
+          'capture': p.capture == null ? null : jsonEncode(p.capture!.toJson()),
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     }),
@@ -275,7 +328,7 @@ class PlogDrafts {
             as String?,
   );
 
-  Future<String> reservePhoto(String plogId) => _ordered(
+  Future<String> reservePhoto(String plogId, {String? replacing}) => _ordered(
     (db) => db.transaction((tx) async {
       final editable = await tx.query(
         'drafts',
@@ -289,11 +342,25 @@ class PlogDrafts {
         [scope, plogId],
       );
       final count = rows.single['n'] as int;
-      if (count >= 6 || count != rows.single['ready']) {
+      if ((replacing == null && count >= 6) || count != rows.single['ready']) {
         throw StateError('Finish the current selection or remove a photo.');
       }
+      if (replacing != null &&
+          (await tx.query(
+            'photos',
+            columns: ['id'],
+            where: 'scope=? AND plog_id=? AND id=? AND bytes IS NOT NULL',
+            whereArgs: [scope, plogId, replacing],
+          )).isEmpty) {
+        throw StateError('The original photo is no longer in this draft.');
+      }
       final id = const Uuid().v4();
-      await tx.insert('photos', {'id': id, 'scope': scope, 'plog_id': plogId});
+      await tx.insert('photos', {
+        'id': id,
+        'scope': scope,
+        'plog_id': plogId,
+        'replaces': replacing,
+      });
       return id;
     }),
   );
@@ -329,6 +396,9 @@ class PlogDrafts {
               'plog_id': plogId,
               'media_type': p.type,
               'bytes': p.bytes,
+              'capture': p.capture == null
+                  ? null
+                  : jsonEncode(p.capture!.toJson()),
             });
           }
         }),
@@ -338,42 +408,102 @@ class PlogDrafts {
     String plogId,
     String id,
     String type,
-    Uint8List bytes,
-  ) => _ordered((db) async {
-    final count = await db.update(
-      'photos',
-      {'bytes': bytes, 'media_type': type},
-      where: 'scope=? AND plog_id=? AND id=? AND bytes IS NULL',
-      whereArgs: [scope, plogId, id],
-    );
-    if (count != 1) throw StateError('The Plog draft has changed.');
-  });
+    Uint8List bytes, {
+    PhotoCapture? capture,
+  }) => _ordered(
+    (db) => db.transaction((tx) async {
+      final args = [scope, plogId, id];
+      final row = (await tx.query(
+        'photos',
+        columns: ['replaces'],
+        where: 'scope=? AND plog_id=? AND id=? AND bytes IS NULL',
+        whereArgs: args,
+      )).firstOrNull;
+      if (row == null) throw StateError('The Plog draft has changed.');
+      final count = await tx.update(
+        'photos',
+        {
+          'bytes': bytes,
+          'media_type': type,
+          'capture': capture == null ? null : jsonEncode(capture.toJson()),
+          'replaces': null,
+        },
+        where: 'scope=? AND plog_id=? AND id=? AND bytes IS NULL',
+        whereArgs: args,
+      );
+      if (count != 1) throw StateError('The Plog draft has changed.');
+      if (row['replaces'] case final String original) {
+        await _removePhoto(tx, plogId, original);
+      }
+    }),
+  );
 
-  Future<void> removePhoto(String plogId, String id) => _ordered((db) async {
-    if ((await db.query(
-      'observations',
-      columns: ['id'],
-      where: 'scope=? AND photo=?',
+  Future<void> unlockPhotos(String id) => _ordered((db) async {
+    await db.update(
+      'drafts',
+      {'photo_locked': 0},
+      where: 'scope=? AND id=?',
       whereArgs: [scope, id],
-      limit: 1,
-    )).isNotEmpty) {
-      throw StateError('This photo supports a confirmed pickup.');
-    }
-    await db.delete(
-      'photos',
-      where:
-          'scope=? AND plog_id=? AND id=? AND scope IN (SELECT scope FROM drafts WHERE photo_locked=0)',
-      whereArgs: [scope, plogId, id],
     );
   });
 
-  Future<({String type, Uint8List bytes})> readPhoto(
+  Future<List<String>> photoRemovals(String plog) => _ordered(
+    (db) async => [
+      for (final row in await db.query(
+        'photo_removals',
+        columns: ['id'],
+        where: 'scope=? AND plog_id=?',
+        whereArgs: [scope, plog],
+      ))
+        row['id'] as String,
+    ],
+  );
+
+  Future<void> acknowledgePhotoRemoval(String plog, String id) =>
+      _ordered((db) async {
+        await db.delete(
+          'photo_removals',
+          where: 'scope=? AND plog_id=? AND id=?',
+          whereArgs: [scope, plog, id],
+        );
+      });
+
+  Future<void> removePhoto(String plogId, String id) =>
+      _ordered((db) => db.transaction((tx) => _removePhoto(tx, plogId, id)));
+
+  Future<void> _removePhoto(Transaction tx, String plogId, String id) async {
+    final args = [scope, plogId, id];
+    final rows = await tx.rawQuery(
+      'SELECT bytes IS NOT NULL AS ready FROM photos p JOIN drafts d ON p.scope=d.scope WHERE p.scope=? AND p.plog_id=? AND p.id=? AND d.photo_locked=0',
+      args,
+    );
+    if (rows.isEmpty) return;
+    if (rows.single['ready'] == 1) {
+      await tx.insert('photo_removals', {
+        'scope': scope,
+        'plog_id': plogId,
+        'id': id,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await tx.delete(
+      'observations',
+      where: 'scope=? AND plog=? AND photo=?',
+      whereArgs: args,
+    );
+    await tx.delete(
+      'photos',
+      where: 'scope=? AND plog_id=? AND id=?',
+      whereArgs: args,
+    );
+  }
+
+  Future<({String type, Uint8List bytes, PhotoCapture? capture})> readPhoto(
     String plogId,
     String id,
   ) => _ordered((db) async {
     final args = [scope, plogId, id];
     final rows = await db.rawQuery(
-      'SELECT media_type, length(bytes) AS size FROM photos WHERE scope=? AND plog_id=? AND id=?',
+      'SELECT media_type, capture, length(bytes) AS size FROM photos WHERE scope=? AND plog_id=? AND id=?',
       args,
     );
     final row = rows.single;
@@ -387,7 +517,13 @@ class PlogDrafts {
       );
       data.add(part.single['part'] as Uint8List);
     }
-    return (type: row['media_type'] as String, bytes: data.takeBytes());
+    return (
+      type: row['media_type'] as String,
+      bytes: data.takeBytes(),
+      capture: row['capture'] == null
+          ? null
+          : PhotoCapture.fromJson(jsonDecode(row['capture'] as String)),
+    );
   });
 
   Future<T> _ordered<T>(Future<T> Function(Database) operation) {
@@ -395,6 +531,17 @@ class PlogDrafts {
     _queue = result.then<void>((_) {}, onError: (Object _) {});
     return result;
   }
+
+  Future<bool> exists() => _ordered((db) async {
+    final rows = await db.query(
+      'drafts',
+      columns: ['id'],
+      where: 'scope=?',
+      whereArgs: [scope],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  });
 
   Future<PlogTrack?> load() => _ordered(
     (db) => db.transaction((tx) async {
@@ -419,13 +566,23 @@ class PlogDrafts {
             ? null
             : DateTime.parse(row['ended'] as String),
         distanceMeters: (row['meters'] as num).toDouble(),
-        route: List.unmodifiable(
-          points.map(
-            (p) => (
+        route: PlogTrack.restoredRoute(
+          points.map((p) {
+            final point = (
               latitude: (p['latitude'] as num).toDouble(),
               longitude: (p['longitude'] as num).toDouble(),
-            ),
-          ),
+            );
+            return (
+              point: point,
+              sample: p['recorded'] == null
+                  ? null
+                  : GpsSample(
+                      point,
+                      DateTime.parse(p['recorded'] as String),
+                      (p['accuracy'] as num).toDouble(),
+                    ),
+            );
+          }),
         ),
       );
     }),
@@ -469,33 +626,38 @@ class PlogDrafts {
       final batch = tx.batch();
       for (var i = count; i < track.route.length; i++) {
         final p = track.route[i];
+        final sample = track.sampleAt(i);
         batch.insert('fixes', {
           'scope': scope,
           'sequence': i,
           'latitude': p.latitude,
           'longitude': p.longitude,
+          'recorded': sample?.recordedAt.toIso8601String(),
+          'accuracy': sample?.accuracyMeters,
         });
       }
       await batch.commit(noResult: true);
     }),
   );
 
-  Future<void> remove(String id) => _ordered((db) async {
-    await db.delete(
-      'observations',
-      where: 'scope=? AND plog=? AND sent=1',
-      whereArgs: [scope, id],
-    );
-    await db.delete(
-      'drafts',
-      where: 'scope = ? AND id = ?',
-      whereArgs: [scope, id],
-    );
-  });
+  Future<void> remove(String id) => _ordered(
+    (db) => db.transaction((tx) async {
+      await tx.delete(
+        'observations',
+        where: 'scope=? AND plog=?',
+        whereArgs: [scope, id],
+      );
+      await tx.delete(
+        'drafts',
+        where: 'scope=? AND id=?',
+        whereArgs: [scope, id],
+      );
+    }),
+  );
 }
 
 final resumablePlogProvider = FutureProvider.autoDispose(
-  (ref) async => (await ref.watch(plogDraftsProvider).load()) != null,
+  (ref) => ref.watch(plogDraftsProvider).exists(),
   retry: (_, _) => null,
 );
 final linkedSpotsProvider = FutureProvider.autoDispose.family(

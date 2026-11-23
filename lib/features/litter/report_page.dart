@@ -62,8 +62,8 @@ class _ReportPageState extends ConsumerState<ReportPage> {
                           tooltip: 'Remove sample photo',
                           onPressed: () => setState(() => _photo = false),
                           style: IconButton.styleFrom(
-                            backgroundColor: AppColors.ink,
-                            foregroundColor: Colors.white,
+                            backgroundColor: context.colors.inverseSurface,
+                            foregroundColor: context.colors.onInverseSurface,
                           ),
                           icon: const Icon(Icons.close_rounded, size: 20),
                         ),
@@ -90,15 +90,15 @@ class _ReportPageState extends ConsumerState<ReportPage> {
           padding: const EdgeInsets.fromLTRB(12, 3, 4, 3),
           child: Row(
             children: [
-              const Icon(Icons.location_on_outlined, color: AppColors.primary),
+              Icon(Icons.location_on_outlined, color: context.colors.primary),
               const SizedBox(width: 8),
               Expanded(child: Text(_location, style: AppText.label)),
               IconButton(
                 tooltip: 'Change sample location',
                 onPressed: _editLocation,
-                icon: const Icon(
+                icon: Icon(
                   Icons.edit_location_alt_outlined,
-                  color: AppColors.primary,
+                  color: context.colors.primary,
                   size: 22,
                 ),
               ),
@@ -137,9 +137,9 @@ class _ReportPageState extends ConsumerState<ReportPage> {
               'City Lake · walking trail',
             ])
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.location_on_outlined,
-                  color: AppColors.primary,
+                  color: context.colors.primary,
                 ),
                 title: Text(location),
                 onTap: () => Navigator.pop(context, location),

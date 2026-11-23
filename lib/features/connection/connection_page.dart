@@ -83,7 +83,7 @@ class ConnectionPage extends ConsumerWidget {
                       status == ConnectionCheckStatus.connected
                           ? Icons.check_circle_outline
                           : Icons.network_check,
-                      color: AppColors.primary,
+                      color: context.colors.primary,
                       size: 36,
                     ),
                   ),

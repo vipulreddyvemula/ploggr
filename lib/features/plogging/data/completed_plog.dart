@@ -9,6 +9,13 @@ class CompletedPlog {
     this.meters,
     this.route, [
     this.breaks = const [],
+    this.verifiedCleanups = 0,
+    this.unverifiedCleanups = 0,
+    this.alreadyCollected = 0,
+    this.hasRoute,
+    this.pickupCount,
+    this.photoCount,
+    this.analysisState,
   ]);
   final String id;
   final DateTime startedAt, endedAt;
@@ -16,6 +23,10 @@ class CompletedPlog {
   final double meters;
   final List<RouteFix>? route;
   final List<int> breaks;
+  final int verifiedCleanups, unverifiedCleanups, alreadyCollected;
+  final bool? hasRoute;
+  final int? pickupCount, photoCount;
+  final String? analysisState;
 
   factory CompletedPlog.parse(
     Object? value,
@@ -56,6 +67,13 @@ class CompletedPlog {
         meters.toDouble(),
         route,
         List<int>.from(value['segmentStarts'] as List? ?? []),
+        (value['cleanupClaims'] as Map?)?['verified'] as int? ?? 0,
+        (value['cleanupClaims'] as Map?)?['unverified'] as int? ?? 0,
+        (value['cleanupClaims'] as Map?)?['alreadyCollected'] as int? ?? 0,
+        route == null ? value['hasRoute'] as bool? : route.isNotEmpty,
+        value['pickupCount'] as int?,
+        value['photoCount'] as int?,
+        value['analysisState'] as String?,
       );
     }
     throw const FormatException('Invalid completed activity');

@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import '../constants/app_colors.dart';
 
 abstract final class AppSpace {
   static const xs = 4.0;
@@ -8,6 +7,7 @@ abstract final class AppSpace {
   static const lg = 16.0;
   static const xl = 24.0;
   static const xxl = 32.0;
+  static const target = 48.0;
   static const page = EdgeInsets.symmetric(horizontal: 20);
 }
 
@@ -24,6 +24,7 @@ abstract final class AppShadows {
 }
 
 abstract final class AppText {
+  static const pageTitleSize = 20.0;
   static const hero = TextStyle(
     fontSize: 36,
     fontWeight: FontWeight.w800,
@@ -52,9 +53,13 @@ abstract final class AppText {
     fontWeight: FontWeight.w800,
     height: 1.3,
   );
-  static const caption = TextStyle(
-    fontSize: 13,
-    color: AppColors.muted,
-    height: 1.4,
-  );
+  static const caption = TextStyle(fontSize: 13, height: 1.4);
+}
+
+extension AppColorScheme on BuildContext {
+  ColorScheme get colors => Theme.of(this).colorScheme;
+
+  Color get goldIcon => colors.brightness == Brightness.dark
+      ? const Color(0xFFF6B930)
+      : const Color(0xFF855600);
 }

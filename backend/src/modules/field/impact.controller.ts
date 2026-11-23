@@ -36,7 +36,7 @@ export class ImpactController {
   constructor(private readonly db: DataSource) {}
   private async owned(owner: string, id: string) {
     const [row] = await this.db.query(
-      `SELECT a.state,a.result,a.model,a.reviewed FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
+      `SELECT a.state,a.result,a.model,a.reviewed,a.suspicious_evidence AS "suspiciousEvidence" FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
       WHERE p.user_id=$1 AND p.id=$2`,
       [owner, id],
     );
@@ -107,7 +107,7 @@ export class ImpactController {
     if (!rules) return { items: [], mine: null, pending: pending.n, rules: null };
     const ranked = await this.db.query(
       `WITH qualifying AS (
-      SELECT p.id,p.user_id,p.ended_at,a.result FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id WHERE a.state='ready' AND
+      SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,a.result FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id WHERE a.state='ready' AND
       ($2='all' OR p.ended_at >= (date_trunc(CASE WHEN $2='month' THEN 'month' ELSE 'week' END, now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))
     ), detections AS (
       SELECT q.id,q.user_id,obj->>'material' AS material,(obj->>'count')::int AS quantity,
@@ -116,7 +116,7 @@ export class ImpactController {
           JOIN garbage_evidence e ON e.id=view.photo::uuid
           WHERE EXISTS (SELECT 1 FROM garbage_evidence prior JOIN plogs p ON p.id=prior.plog_id
             WHERE prior.sha256=e.sha256 AND prior.plog_id<>q.id AND p.status='completed'
-            AND (p.ended_at,p.id)<(q.ended_at,q.id))
+            AND (coalesce(p.completed_at,p.ended_at),p.id)<(q.accepted_at,q.id))
           OR EXISTS (SELECT 1 FROM spot_observations o WHERE o.photo_id=e.id AND o.outcome='cleaned' AND NOT o.resolved)
         ) AS eligible
       FROM qualifying q CROSS JOIN LATERAL jsonb_array_elements(q.result->'items') obj

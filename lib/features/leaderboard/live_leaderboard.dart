@@ -52,12 +52,30 @@ class _BoardState extends State<LiveLeaderboard> {
                 ),
                 const SectionTitle('Community standings'),
                 if ((data['items'] as List).isEmpty)
-                  const Text('No ranked Plogs for this period.'),
+                  const AppNotice('No ranked Plogs for this period.'),
                 for (final r in data['items'])
-                  ListTile(
-                    leading: Text('#${r['rank']}'),
-                    title: Text(r['name']),
-                    trailing: Text('${r['score']} pts'),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                    child: EcoCard(
+                      child: Row(
+                        children: [
+                          Text('#${r['rank']}', style: AppText.label),
+                          const SizedBox(width: AppSpace.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(r['name']),
+                                Text(
+                                  '${r['score']} pts',
+                                  style: AppText.caption,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ExpansionTile(
                   key: const PageStorageKey('leaderboard-scoring'),

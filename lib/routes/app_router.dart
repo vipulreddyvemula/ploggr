@@ -32,6 +32,7 @@ import '../features/community/community_page.dart';
 import '../features/profile/profile_page.dart';
 import '../features/connection/connection_page.dart';
 import 'app_routes.dart';
+import '../shared/widgets/ploggr_ui.dart';
 
 /// Override in tests to open a specific route without changing production flow.
 final initialLocationProvider = Provider<String>((ref) => AppRoutes.splash);
@@ -105,7 +106,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.report,
-        builder: (_, _) => live ? const SpotEditor() : const ReportPage(),
+        builder: (_, state) => live
+            ? SpotEditor(repeatedReport: state.uri.queryParameters['repeat'])
+            : const ReportPage(),
       ),
       GoRoute(
         path: AppRoutes.map,
@@ -155,6 +158,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       if (live) ...[
         GoRoute(
+          path: '${AppRoutes.report}/published/:id',
+          redirect: (_, state) => state.extra == true
+              ? null
+              : '/spots/${state.pathParameters['id']}',
+          builder: (_, state) =>
+              ReportPublishedPage(state.pathParameters['id']!),
+        ),
+        GoRoute(
           path: '/spots/:id',
           builder: (_, s) => SpotPage(s.pathParameters['id']!),
         ),
@@ -184,17 +195,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             return switch (section) {
               ProfileSection.saved => const ExplorePage(own: true),
               ProfileSection.activity => const PlogActivityPage(),
-              ProfileSection.about || ProfileSection.help => Scaffold(
-                appBar: AppBar(title: Text(section.title)),
-                body: Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Text(
-                    section == ProfileSection.about
-                        ? 'Ploggr connects litter sightings with people who pick them up on walks.'
-                        : 'Report litter to share a photo and pin. During a Plog, add one to six pickup photos. You can walk without recording a route. Confirm a nearby cleanup to update the map.',
-                  ),
-                ),
-              ),
               _ => ProfileDetailPage(section: section),
             };
           },
@@ -224,7 +224,10 @@ class _SessionGate extends ConsumerWidget {
       SessionPhase.unavailable => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Could not verify your session.'),
+          const AppNotice(
+            'Could not verify your session.',
+            status: AppStatus.failure,
+          ),
           TextButton(
             onPressed: sessions.accessToken,
             child: const Text('Retry'),
@@ -238,17 +241,31 @@ class _SessionGate extends ConsumerWidget {
       SessionPhase.logoutFailed => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Secure storage could not finish signing you out.'),
+          const AppNotice(
+            'Could not finish signing you out on this device.',
+            status: AppStatus.failure,
+          ),
           TextButton(
             onPressed: () => logoutFromDevice(context, sessions),
             child: const Text('Retry logout'),
           ),
         ],
       ),
-      _ => const CircularProgressIndicator(semanticsLabel: 'Checking session'),
+      SessionPhase.signingOut => const AppLoading('Signing out'),
+      _ => const AppLoading('Checking session'),
     };
     return Scaffold(
-      body: SafeArea(child: Center(child: content)),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: AppSpace.page,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: content,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

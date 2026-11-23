@@ -31,11 +31,11 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
         title: const Text('Community'),
         actions: const [SizedBox(width: 48)],
       ),
-      bottomNavigationBar: const BottomNavBar(caller: 'community'),
+      bottomNavigationBar: const BottomNavBar(),
       floatingActionButton: FloatingActionButton.small(
         tooltip: 'Write a preview post',
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: context.colors.primary,
+        foregroundColor: context.colors.onPrimary,
         onPressed: _compose,
         child: const Icon(Icons.add_rounded),
       ),
@@ -157,20 +157,20 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
                       horizontal: 10,
                       vertical: 6,
                     ),
-                    decoration: const BoxDecoration(
-                      color: AppColors.surface,
+                    decoration: BoxDecoration(
+                      color: context.colors.surface,
                       borderRadius: AppRadius.pill,
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.location_on_outlined,
                           size: 16,
-                          color: AppColors.coral,
+                          color: context.colors.error,
                         ),
-                        SizedBox(width: 4),
-                        Text('Litter Spot', style: AppText.label),
+                        const SizedBox(width: 4),
+                        const Text('Litter Spot', style: AppText.label),
                       ],
                     ),
                   ),
@@ -184,7 +184,9 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
           children: [
             TextButton.icon(
               style: TextButton.styleFrom(
-                foregroundColor: post.liked ? AppColors.coral : AppColors.ink,
+                foregroundColor: post.liked
+                    ? context.colors.error
+                    : context.colors.onSurface,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
               ),
               onPressed: () =>
@@ -194,12 +196,14 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
                     ? Icons.favorite_rounded
                     : Icons.favorite_border_rounded,
                 size: 20,
-                color: AppColors.coral,
+                color: context.colors.error,
               ),
               label: Text('${post.likes}'),
             ),
             TextButton.icon(
-              style: TextButton.styleFrom(foregroundColor: AppColors.ink),
+              style: TextButton.styleFrom(
+                foregroundColor: context.colors.onSurface,
+              ),
               onPressed: () => _comments(post.id),
               icon: const Icon(Icons.chat_bubble_outline_rounded, size: 19),
               label: Text('${post.comments.length}'),
@@ -321,9 +325,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                   children: [
                     for (final comment in post.comments)
                       ListTile(
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.chat_bubble_outline,
-                          color: AppColors.primary,
+                          color: context.colors.primary,
                         ),
                         title: Text(comment, style: AppText.body),
                       ),
@@ -350,9 +354,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                           .comment(widget.postId, _text.text);
                       _text.clear();
                     },
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.send_rounded,
-                      color: AppColors.primary,
+                      color: context.colors.primary,
                     ),
                   ),
                 ],

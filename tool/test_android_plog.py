@@ -1,4 +1,5 @@
 """Drive the Plog app, permissions, photo picker and camera on a disposable Android emulator."""
+import json
 import re
 import subprocess
 import sys
@@ -113,7 +114,7 @@ def choose_gallery_photo(source="Choose photo", expected_total=1):
 
         def confirmed():
             tree = nodes()
-            if target(tree, pattern=rf"^(Pickup photos|Photos) \({expected_total}/6\)") or target(tree, label="Did you clean up this spot?"):
+            if target(tree, pattern=rf"^(Pickup photos|Report photos|Photos) \({expected_total}/6\)") or target(tree, label="Did you clean up this spot?"):
                 return True
             done = target(tree, label="Done")
             if done:
@@ -153,6 +154,11 @@ if PHASE == "track":
     stage("ready")
     control("Report")
     choose_gallery_photo("Choose photo")
+    control("Continue to details")
+    reveal(None, pattern=r"Notes \(optional\)")
+    adb("shell", "input", "text", "Lakeside")
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    control("Continue to location")
     control("Choose spot")
     control("Search a park, street or landmark", click=False)
     width, height = map(int, re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[-1])
@@ -161,10 +167,9 @@ if PHASE == "track":
         return target(nodes(), label="Use this spot")
     until(choose_map_point, "movable map pin")
     control("Use this spot")
-    reveal(None, pattern=r"Notes \(optional\)")
-    adb("shell", "input", "text", "Lakeside")
-    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    control("Review report")
     control("Post report")
+    control("Show on map")
     control("Litter Map", click=False)
     adb("shell", "run-as", PACKAGE, "touch", "cache/plog-posted")
     stage("walker")
@@ -186,13 +191,15 @@ if PHASE == "track":
     until(tracking_ready, "active GPS tracking")
     until(lambda: "Plog in progress" in adb("shell", "dumpsys", "notification", "--noredact"),
           "ongoing Plog notification")
-    for index, longitude in enumerate(["-122.084", "-122.083"]):
+    longitude, latitude = json.loads(marker("shared-point"))
+    for index, point in enumerate([longitude, longitude + .0004]):
         def deliver():
-            adb("emu", "geo", "fix", longitude, "37.422")
+            adb("emu", "geo", "fix", str(point), str(latitude))
             time.sleep(2)
             return marker("fix-" + str(index)) == "ok"
         if index == 1:
             adb("shell", "input", "keyevent", "KEYCODE_SLEEP")
+            time.sleep(7)
         until(deliver, "recorded GPS fix " + str(index))
     adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
     adb("shell", "wm", "dismiss-keyguard")
@@ -214,8 +221,6 @@ elif PHASE == "offline":
 elif PHASE == "restore":
     start_app()
     stage("reopened")
-    control(pattern=r"^(Start|Resume) Plog Session$")
-    reveal("Retry save")
     stage("completed")
 elif PHASE == "retrieve":
     adb("shell", "run-as", PACKAGE, "touch", "cache/plog-storage-restarted")

@@ -5,6 +5,48 @@ import 'package:geolocator/geolocator.dart';
 
 typedef RouteFix = ({double latitude, double longitude});
 
+class GpsSample {
+  const GpsSample(this.point, this.recordedAt, this.accuracyMeters);
+
+  factory GpsSample.fromPosition(Position position) => GpsSample(
+    (latitude: position.latitude, longitude: position.longitude),
+    position.timestamp.toUtc(),
+    position.accuracy,
+  );
+
+  factory GpsSample.fromJson(Map<String, dynamic> json) => GpsSample(
+    (
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+    ),
+    DateTime.parse(json['recordedAt'] as String),
+    (json['accuracyMeters'] as num).toDouble(),
+  );
+
+  final RouteFix point;
+  final DateTime recordedAt;
+  final double accuracyMeters;
+
+  bool get valid =>
+      point.latitude.abs() <= 90 &&
+      point.longitude.abs() <= 180 &&
+      accuracyMeters.isFinite &&
+      accuracyMeters >= 0.1 &&
+      accuracyMeters <= 10000;
+
+  bool freshAt(DateTime time, {Duration maxAge = const Duration(seconds: 30)}) {
+    final age = time.difference(recordedAt);
+    return age >= const Duration(seconds: -5) && age <= maxAge;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'latitude': point.latitude,
+    'longitude': point.longitude,
+    'recordedAt': recordedAt.toUtc().toIso8601String(),
+    'accuracyMeters': accuracyMeters,
+  };
+}
+
 /// Android 13+ asks once before displaying the ongoing tracking notification.
 Future<void> requestTrackingNotification() async {
   if (Platform.isAndroid) {
@@ -27,16 +69,25 @@ enum LocationFailure implements Exception {
 class LocationSource {
   LocationSource(this.platform);
   final GeolocatorPlatform platform;
-  Position? _latest;
-  RouteFix? get recentFix {
-    final p = _latest;
-    if (p == null ||
-        p.accuracy > 50 ||
-        p.accuracy <= 0 ||
-        DateTime.now().difference(p.timestamp).inSeconds > 60) {
-      return null;
+  GpsSample? _latest;
+  GpsSample? get recentSample {
+    final fix = _latest;
+    return fix != null && fix.freshAt(DateTime.now()) ? fix : null;
+  }
+
+  RouteFix? get recentFix => recentSample?.point;
+
+  Future<GpsSample> photographLocation() async {
+    await requestAccess();
+    final cached = recentSample;
+    if (cached != null && cached.accuracyMeters <= 40) return cached;
+    final p = await _currentPosition();
+    final sample = GpsSample.fromPosition(p);
+    if (p.isMocked || !sample.valid || !sample.freshAt(DateTime.now())) {
+      throw LocationFailure.unavailable;
     }
-    return (latitude: p.latitude, longitude: p.longitude);
+    _latest = sample;
+    return sample;
   }
 
   Future<void> requestAccess() async {
@@ -81,17 +132,19 @@ class LocationSource {
 
   Future<Position> current() async {
     await requestAccess();
-    return platform.getCurrentPosition(
-      locationSettings: AndroidSettings(
-        forceLocationManager: true,
-        accuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      ),
-    );
+    return _currentPosition();
   }
 
+  Future<Position> _currentPosition() => platform.getCurrentPosition(
+    locationSettings: AndroidSettings(
+      forceLocationManager: true,
+      accuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 10),
+    ),
+  );
+
   // Listening starts the native stream. Cancelling releases the subscription.
-  Stream<RouteFix> fixes() {
+  Stream<GpsSample> fixes() {
     final since = DateTime.now();
     return platform
         .getPositionStream(
@@ -111,15 +164,17 @@ class LocationSource {
             intervalDuration: const Duration(seconds: 2),
           ),
         )
+        .where((p) => !p.isMocked && !p.timestamp.isBefore(since))
+        .map(GpsSample.fromPosition)
         .where(
-          (p) =>
-              !p.timestamp.isBefore(since) &&
-              p.latitude.abs() <= 90 &&
-              p.longitude.abs() <= 180,
+          (fix) =>
+              fix.valid &&
+              fix.accuracyMeters <= 50 &&
+              fix.freshAt(DateTime.now()),
         )
-        .map((p) {
-          _latest = p;
-          return (latitude: p.latitude, longitude: p.longitude);
+        .map((fix) {
+          _latest = fix;
+          return fix;
         });
   }
 }

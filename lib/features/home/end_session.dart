@@ -79,9 +79,9 @@ class EndSessionPage extends ConsumerWidget {
                   onPressed: session.kg > 0
                       ? () => controller.setWeight(session.kg - .5)
                       : null,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.remove_rounded,
-                    color: AppColors.primary,
+                    color: context.colors.primary,
                   ),
                 ),
                 Expanded(
@@ -94,7 +94,7 @@ class EndSessionPage extends ConsumerWidget {
                 IconButton(
                   tooltip: 'Increase litter weight',
                   onPressed: () => controller.setWeight(session.kg + .5),
-                  icon: const Icon(Icons.add_rounded, color: AppColors.primary),
+                  icon: Icon(Icons.add_rounded, color: context.colors.primary),
                 ),
               ],
             ),
@@ -149,7 +149,7 @@ class EndSessionPage extends ConsumerWidget {
                   child: OutlinedButton(
                     onPressed: controller.addPhoto,
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: AppColors.paleGreen,
+                      backgroundColor: context.colors.primaryContainer,
                     ),
                     child: const Icon(
                       Icons.add_rounded,

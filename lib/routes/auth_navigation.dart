@@ -26,7 +26,8 @@ class AuthNavigation extends ChangeNotifier {
   bool _returnToLogin = false;
 
   void sessionChanged(SessionState? previous, SessionState next) {
-    if (next.phase == SessionPhase.signingOut) {
+    if (next.phase == SessionPhase.signingOut ||
+        (next.phase == SessionPhase.expired && previous?.user != null)) {
       _destination = null;
       _returnToLogin = true;
     }
@@ -48,7 +49,7 @@ class AuthNavigation extends ChangeNotifier {
         phase == SessionPhase.logoutFailed) {
       return splash ? null : AppRoutes.splash;
     }
-    if (_returnToLogin && phase == SessionPhase.signedOut) {
+    if (_returnToLogin && phase.canSignIn) {
       if (path != AppRoutes.login) return AppRoutes.login;
       _returnToLogin = false;
     }

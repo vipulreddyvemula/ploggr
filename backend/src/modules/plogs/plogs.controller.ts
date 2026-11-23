@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { FinishPlogDto } from './plog.dto';
 import { PlogsService } from './plogs.service';
@@ -10,7 +10,9 @@ export class PlogsController {
 
   @Post()
   @Header('Cache-Control', 'no-store')
-  start(@Req() req: AuthenticatedRequest) { return this.plogs.start(req.user.id); }
+  start(@Req() req: AuthenticatedRequest, @Headers('x-plog-device') recorder?: string) {
+    return this.plogs.start(req.user.id, recorder);
+  }
 
   @Get('summary')
   @Header('Cache-Control','private, no-store')
@@ -32,10 +34,27 @@ export class PlogsController {
     return this.plogs.detail(req.user.id, id);
   }
 
+  @Delete(':id')
+  @HttpCode(204)
+  @Header('Cache-Control', 'no-store')
+  cancel(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-plog-device') recorder?: string) {
+    return this.plogs.cancel(req.user.id, id, recorder);
+  }
+
+  @Post(':id/transfer')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  transfer(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-plog-device') recorder?: string) {
+    return this.plogs.transfer(req.user.id, id, recorder);
+  }
+
   @Post(':id/finish')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
-  finish(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: FinishPlogDto) {
-    return this.plogs.finish(req.user.id, id, dto);
+  finish(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: FinishPlogDto,
+    @Headers('x-plog-device') recorder?: string) {
+    return this.plogs.finish(req.user.id, id, dto, recorder);
   }
 }

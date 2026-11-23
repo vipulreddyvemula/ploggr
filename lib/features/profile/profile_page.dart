@@ -1,3 +1,5 @@
+import 'package:package_info_plus/package_info_plus.dart';
+import '../onboarding/onboarding_page.dart';
 import '../community/field_data.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,7 +45,7 @@ class ProfilePage extends ConsumerWidget {
     return AppPage(
       title: 'Profile',
       root: live,
-      bottomNavigation: const BottomNavBar(caller: 'profile'),
+      bottomNavigation: const BottomNavBar(),
       child: Column(
         children: [
           Row(
@@ -51,10 +53,10 @@ class ProfilePage extends ConsumerWidget {
               if (live)
                 CircleAvatar(
                   radius: 34,
-                  backgroundColor: AppColors.paleGreen,
+                  backgroundColor: context.colors.primaryContainer,
                   child: Text(
                     name.characters.first.toUpperCase(),
-                    style: AppText.hero.copyWith(color: AppColors.primary),
+                    style: AppText.hero.copyWith(color: context.colors.primary),
                   ),
                 )
               else
@@ -129,11 +131,14 @@ class ProfilePage extends ConsumerWidget {
               ],
             ),
           const SizedBox(height: 24),
-          EcoCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                if (live) ...[
+          if (live) ...[
+            const SectionTitle('Your activity'),
+            EcoCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _row(context, ProfileSection.activity, 'My Activity'),
+                  _row(context, ProfileSection.saved, 'My reports'),
                   ListTile(
                     leading: const Icon(Icons.workspace_premium_outlined),
                     title: const Text('My badges'),
@@ -151,15 +156,25 @@ class ProfilePage extends ConsumerWidget {
                       onTap: () => openPage(context, '/moderation'),
                     ),
                 ],
-                for (final section in ProfileSection.values) ...[
-                  if (section != ProfileSection.values.first) const Divider(),
-                  _row(
-                    context,
-                    section,
-                    live && section == ProfileSection.saved
-                        ? 'My reports'
-                        : section.title,
-                  ),
+              ),
+            ),
+            const SectionTitle('Account and support'),
+          ],
+          EcoCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (final section
+                    in live
+                        ? [
+                            ProfileSection.settings,
+                            ProfileSection.help,
+                            ProfileSection.about,
+                          ]
+                        : ProfileSection.values) ...[
+                  if (!live && section != ProfileSection.values.first)
+                    const Divider(),
+                  _row(context, section, section.title),
                 ],
               ],
             ),
@@ -177,7 +192,7 @@ class ProfilePage extends ConsumerWidget {
   Widget _row(BuildContext context, ProfileSection section, String title) =>
       ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-        leading: Icon(section.icon, size: 22, color: AppColors.ink),
+        leading: Icon(section.icon, size: 22, color: context.colors.onSurface),
         title: Text(title, style: AppText.label.copyWith(fontSize: 14)),
         trailing: const Icon(Icons.chevron_right_rounded, size: 21),
         onTap: () => openPage(context, section.path),
@@ -189,34 +204,33 @@ class ProfilePage extends ConsumerWidget {
     String current, {
     bool live = false,
   }) async {
-    final name = await showDialog<String>(
+    await showDialog<void>(
       context: context,
-      builder: (_) => _EditProfileDialog(name: current),
+      barrierDismissible: false,
+      builder: (_) => _EditProfileDialog(
+        name: current,
+        save: (name) async {
+          if (live) {
+            await writeField(
+              ref,
+              'PUT',
+              'profile',
+              data: {'name': name},
+              reload: ['profile'],
+            );
+          } else {
+            ref.read(profileProvider.notifier).rename(name);
+          }
+        },
+      ),
     );
-    if (name == null || !context.mounted) return;
-    if (live) {
-      try {
-        await writeField(
-          ref,
-          'PUT',
-          'profile',
-          data: {'name': name.trim()},
-          reload: ['profile'],
-        );
-      } catch (_) {
-        if (context.mounted) {
-          toast(context, 'Could not save your display name. Please retry.');
-        }
-      }
-    } else {
-      ref.read(profileProvider.notifier).rename(name);
-    }
   }
 }
 
 class _EditProfileDialog extends StatefulWidget {
-  const _EditProfileDialog({required this.name});
+  const _EditProfileDialog({required this.name, required this.save});
   final String name;
+  final Future<void> Function(String) save;
   @override
   State<_EditProfileDialog> createState() => _EditProfileDialogState();
 }
@@ -225,6 +239,28 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final TextEditingController _name = TextEditingController(
     text: widget.name,
   );
+  bool saving = false;
+  String? error;
+
+  Future<void> save() async {
+    if (saving || _name.text.trim().isEmpty) return;
+    setState(() {
+      saving = true;
+      error = null;
+    });
+    try {
+      await widget.save(_name.text.trim());
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          saving = false;
+          error = 'Could not save your display name. Try again.';
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -232,27 +268,41 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Edit profile'),
-    content: TextField(
-      controller: _name,
-      autofocus: true,
-      maxLength: 40,
-      onChanged: (_) => setState(() {}),
-      decoration: const InputDecoration(labelText: 'Display name'),
+  Widget build(BuildContext context) => PopScope(
+    canPop: !saving,
+    child: AlertDialog(
+      title: const Text('Edit profile'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: true,
+            enabled: !saving,
+            maxLength: 40,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => save(),
+            decoration: const InputDecoration(
+              labelText: 'Display name',
+              helperText: 'Shown with your community posts.',
+              helperMaxLines: 3,
+            ),
+          ),
+          if (error != null) AppNotice(error!, status: AppStatus.failure),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: saving || _name.text.trim().isEmpty ? null : save,
+          child: Text(saving ? 'Saving…' : 'Save'),
+        ),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _name.text.trim().isEmpty
-            ? null
-            : () => Navigator.pop(context, _name.text),
-        child: const Text('Save'),
-      ),
-    ],
   );
 }
 
@@ -266,6 +316,7 @@ class ProfileDetailPage extends ConsumerStatefulWidget {
 class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
   @override
   Widget build(BuildContext context) {
+    final live = ref.watch(authModeProvider) == AuthMode.live;
     return AppPage(
       title: widget.section.title,
       backTo: AppRoutes.profile,
@@ -273,6 +324,8 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
         ProfileSection.activity => _activity(),
         ProfileSection.saved => _saved(),
         ProfileSection.settings => _settings(),
+        ProfileSection.help when live => const _LiveHelp(),
+        ProfileSection.about when live => const _LiveAbout(),
         ProfileSection.help => const Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -466,37 +519,45 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
           ),
         const SizedBox(height: 16),
         ListTile(
-          leading: const Icon(Icons.network_check, color: AppColors.primary),
+          leading: Icon(Icons.network_check, color: context.colors.primary),
           title: const Text('Connection check'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => openPage(context, AppRoutes.connection),
         ),
-        if (!live)
-          ListTile(
-            leading: const Icon(
-              Icons.slideshow_rounded,
-              color: AppColors.primary,
-            ),
-            title: const Text('Replay onboarding'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => switchPage(context, AppRoutes.onboarding),
-          ),
         ListTile(
-          leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
+          leading: Icon(Icons.slideshow_rounded, color: context.colors.primary),
+          title: const Text('Replay onboarding'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OnboardingPage(live: live, replay: true),
+            ),
+          ),
+        ),
+        ListTile(
+          leading: Icon(Icons.logout_rounded, color: context.colors.primary),
           title: Text(live ? 'Log out' : 'Leave preview'),
           subtitle: live ? null : const Text('Return to the welcome screen'),
           onTap: live
-              ? () => logoutFromDevice(
-                  context,
-                  ref.read(sessionControllerProvider.notifier),
-                )
+              ? () async {
+                  if (await confirmAction(
+                        context,
+                        'Log out of Ploggr?',
+                        'Confirm logout',
+                      ) &&
+                      mounted) {
+                    await logoutFromDevice(
+                      context,
+                      ref.read(sessionControllerProvider.notifier),
+                    );
+                  }
+                }
               : () => switchPage(context, AppRoutes.login),
         ),
         const SizedBox(height: 20),
         if (!live)
-          const PreviewNote(
-            text: 'Appearance follows the reference’s light green theme.',
-          ),
+          const PreviewNote(text: 'Appearance follows your device theme.'),
       ],
     );
   }
@@ -526,4 +587,94 @@ class _AccountIdentity extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _LiveHelp extends StatelessWidget {
+  const _LiveHelp();
+
+  @override
+  Widget build(BuildContext context) => const Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AppNotice('Get help with camera access, GPS and syncing.'),
+      _HelpTopic(
+        'Camera and photo picker',
+        'Allow camera access in your device settings or choose an image from the gallery. '
+            'Use a still JPEG or PNG. If a photo cannot be saved, check how much space is available on the device.',
+      ),
+      _HelpTopic(
+        'GPS and the report pin',
+        'Go outdoors and check that location is enabled. You can start a Plog without recording a route. '
+            'If the GPS estimate is off, search for a landmark or position the report pin yourself.',
+      ),
+      _HelpTopic(
+        'Pending uploads',
+        'Drafts that are waiting to sync stay on this device. Reconnect and sign in to the same account. '
+            'You can retry a report from My reports or resume a Plog from Home.',
+      ),
+      _HelpTopic(
+        'Who can see photos and locations?',
+        'A published sighting includes its selected pin, photos, category, and any notes you add. '
+            'Pickup photos and routes in your activity stay private to your account. Authorized reviewers can '
+            'see evidence sent for review. A shared Plog post includes the walk’s summary.',
+      ),
+    ],
+  );
+}
+
+class _HelpTopic extends StatelessWidget {
+  const _HelpTopic(this.title, this.body);
+  final String title, body;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    key: PageStorageKey(title),
+    title: Text(title),
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpace.lg,
+          0,
+          AppSpace.lg,
+          AppSpace.lg,
+        ),
+        child: Text(body),
+      ),
+    ],
+  );
+}
+
+final _installedPackage = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+  retry: (_, _) => null,
+);
+
+class _LiveAbout extends ConsumerWidget {
+  const _LiveAbout();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Center(child: PloggrLogo(size: 56)),
+      const SizedBox(height: AppSpace.xl),
+      const Text(
+        'Ploggr connects litter sightings with the people who pick up litter on their walks.',
+        style: AppText.body,
+      ),
+      const SizedBox(height: AppSpace.lg),
+      ref
+          .watch(_installedPackage)
+          .when(
+            data: (info) =>
+                Text('Version ${info.version} · Build ${info.buildNumber}'),
+            loading: () => const AppLoading('Reading app version'),
+            error: (_, _) => AppNotice(
+              'Could not read app version.',
+              actionLabel: 'Retry',
+              onAction: () => ref.invalidate(_installedPackage),
+            ),
+          ),
+    ],
+  );
 }

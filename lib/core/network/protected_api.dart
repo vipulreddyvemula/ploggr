@@ -12,8 +12,9 @@ class ProtectedApiFailure implements Exception {
 }
 
 class ProtectedApi {
-  const ProtectedApi(this._client, this._sessions);
+  const ProtectedApi(this._client, this._sessions, [this._owner]);
   final Dio _client;
+  final String? _owner;
   final SessionController _sessions;
 
   Future<T?> request<T>(
@@ -23,6 +24,9 @@ class ProtectedApi {
     Map<String, dynamic>? queryParameters,
     CancelToken? cancelToken,
     ResponseType? responseType,
+    ProgressCallback? onSendProgress,
+    bool idempotent = false,
+    String? recordingDevice,
   }) async {
     final relative = Uri.parse(path);
     final base = Uri.parse(_client.options.baseUrl);
@@ -42,21 +46,27 @@ class ProtectedApi {
     }
     final verb = method.toUpperCase();
     final initial = await _sessions.credential();
-    if (initial == null) throw const ProtectedApiFailure(401);
+    if (initial == null || _owner != null && initial.owner != _owner) {
+      throw const ProtectedApiFailure(401);
+    }
     var credential = initial;
     for (var attempt = 0; ; attempt++) {
       if (!_sessions.owns(credential)) throw const ProtectedApiFailure(401);
       try {
         final response = await _client.request<T>(
           target.toString(),
-          data: data,
+          data: attempt > 0 && data is FormData ? data.clone() : data,
+          onSendProgress: onSendProgress,
           queryParameters: queryParameters,
           cancelToken: cancelToken,
           options: Options(
             method: verb,
             responseType: responseType,
             followRedirects: false,
-            headers: {'Authorization': 'Bearer ${credential.token}'},
+            headers: {
+              'Authorization': 'Bearer ${credential.token}',
+              'X-Plog-Device': ?recordingDevice,
+            },
           ),
         );
         if (!_sessions.owns(credential)) throw const ProtectedApiFailure(401);
@@ -75,7 +85,8 @@ class ProtectedApi {
           throw const ProtectedApiFailure(401);
         }
         final renewed = await _sessions.credential(rejected: credential);
-        if (renewed == null || (verb != 'GET' && verb != 'HEAD')) {
+        if (renewed == null ||
+            (!idempotent && verb != 'GET' && verb != 'HEAD')) {
           throw const ProtectedApiFailure(401);
         }
         credential = renewed;
@@ -87,7 +98,11 @@ class ProtectedApi {
 final protectedApiProvider = Provider<ProtectedApi>((ref) {
   final client = ref.watch(apiClientProvider);
   if (client == null) throw StateError('API is not configured');
-  return ProtectedApi(client, ref.watch(sessionControllerProvider.notifier));
+  return ProtectedApi(
+    client,
+    ref.watch(sessionControllerProvider.notifier),
+    ref.watch(sessionControllerProvider.select((state) => state.user?.id)),
+  );
 });
 
 final currentIdentityProvider = FutureProvider.autoDispose<SessionUser>((

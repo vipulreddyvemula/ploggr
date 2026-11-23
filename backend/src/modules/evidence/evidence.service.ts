@@ -1,9 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnsupportedMediaTypeException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { DataSource, IsNull, Not, QueryFailedError } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Not, QueryFailedError } from 'typeorm';
+import { requireRecorder } from '../plogs/recording-device';
 import { Plog } from '../plogs/plog.entity';
 import { EvidenceStorage } from './evidence-storage';
+import { parseCapture, parseMetadataField } from './capture-metadata';
 import { GarbageEvidence } from './garbage-evidence.entity';
 
 export interface PhotoUpload { buffer: Buffer; mimetype: string }
@@ -25,8 +27,20 @@ export async function validatePhoto(file?: PhotoUpload) {
   return file;
 }
 
+export async function perceptualHash(bytes: Buffer) {
+  const pixels = await sharp(bytes, { limitInputPixels: 32_000_000 })
+    .rotate().flatten({ background: '#fff' }).toColourspace('b-w').resize(9, 8, { fit: 'fill' }).raw().toBuffer();
+  let hash = 0n;
+  for (let i = 0; i < 72; i++) {
+    if (i % 9 === 8) continue;
+    hash = (hash << 1n) | BigInt(pixels[i] > pixels[i + 1]);
+  }
+  const value = hash.toString(16).padStart(16, '0');
+  return /^0+$|^f+$/.test(value) ? null : value;
+}
+
 function reference(photo: GarbageEvidence) {
-  return { id: photo.id, mediaType: photo.mediaType, byteSize: photo.byteSize, uploadedAt: photo.uploadedAt };
+  return { id: photo.id, mediaType: photo.mediaType, byteSize: photo.byteSize, uploadedAt: photo.uploadedAt, ...(photo.capture ? { capture: photo.capture } : {}) };
 }
 
 @Injectable()
@@ -54,36 +68,72 @@ export class EvidenceService {
     return { bytes, mediaType: photo.mediaType };
   }
 
-  async upload(owner: string, plogId: string, id: string, input?: PhotoUpload) {
+  private async lockPlog(manager: EntityManager, owner: string, plogId: string) {
+    const plog = await manager.getRepository(Plog).createQueryBuilder('p')
+      .where('p.user_id = :owner AND p.id = :plogId', { owner, plogId })
+      .setLock('pessimistic_write').getOne();
+    if (!plog) throw new NotFoundException();
+    return plog;
+  }
+
+  async remove(owner: string, plogId: string, id: string, recorder?: string) {
+    await this.source.transaction(async manager => {
+      const plog = await this.lockPlog(manager, owner, plogId);
+      if (plog.status !== 'active') throw new ConflictException('Photo selection is closed');
+      requireRecorder(plog.recordingDevice, recorder);
+      const rows = await manager.query(
+        'DELETE FROM garbage_evidence WHERE id=$1 AND plog_id=$2 RETURNING storage_key', [id, plog.id]);
+      if (rows.length) {
+        await manager.query('INSERT INTO evidence_deletion_queue(storage_key) VALUES($1) ON CONFLICT DO NOTHING',
+          [rows[0].storage_key]);
+      }
+    });
+  }
+
+  async upload(owner: string, plogId: string, id: string, input?: PhotoUpload, metadata?: unknown, recorder?: string) {
     const file = await validatePhoto(input);
+    const capture = parseCapture(parseMetadataField(metadata));
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const visualHash = await perceptualHash(file.buffer);
     const photo = await this.source.transaction(async manager => {
-      const plog = await manager.getRepository(Plog).createQueryBuilder('p')
-        .where('p.user_id = :owner AND p.id = :plogId', { owner, plogId }).setLock('pessimistic_write').getOne();
-      if (!plog) throw new NotFoundException();
+      const plog = await this.lockPlog(manager, owner, plogId);
       const repo = manager.getRepository(GarbageEvidence);
       const existing = await repo.findOneBy({ id, plog: { id: plog.id } });
       if (existing) {
-        if (existing.sha256 !== sha256) throw new ConflictException('Photo ID already used');
+        const saved = existing.capture;
+        const sameCapture = saved?.source === capture?.source && saved?.capturedAt === capture?.capturedAt
+          && saved?.gps?.latitude === capture?.gps?.latitude && saved?.gps?.longitude === capture?.gps?.longitude
+          && saved?.gps?.accuracyMeters === capture?.gps?.accuracyMeters && saved?.gps?.recordedAt === capture?.gps?.recordedAt;
+        const sameEmbedded = saved?.embeddedTime === capture?.embeddedTime
+          && saved?.embeddedLocation?.latitude === capture?.embeddedLocation?.latitude
+          && saved?.embeddedLocation?.longitude === capture?.embeddedLocation?.longitude;
+        if (existing.sha256 !== sha256 || !sameCapture || !sameEmbedded) throw new ConflictException('Photo ID already used');
         return existing;
       }
       if (plog.status !== 'active') throw new ConflictException('Photo selection is closed');
+      requireRecorder(plog.recordingDevice, recorder);
       if (await repo.countBy({ plog: { id: plog.id } }) >= 6) throw new ConflictException('Six photos already selected');
       const entry = repo.create({ id, plog, byteSize: file.buffer.length, mediaType: file.mimetype, sha256,
-        storageKey: 'evidence/' + plog.id + '/' + id.toLowerCase(), uploadedAt: null });
+        storageKey: 'evidence/' + plog.id + '/' + randomUUID(), uploadedAt: null, capture, perceptualHash: visualHash });
       try { await repo.insert(entry); } catch (error) {
         if (error instanceof QueryFailedError && error.driverError.code === '23505') throw new ConflictException('Photo ID already used');
         throw error;
       }
       return entry;
     });
-    if (!photo.uploadedAt) {
-      // The durable reservation gives a failed or interrupted PUT the same object key on retry.
-      await this.storage.put(photo.storageKey, file.buffer, photo.mediaType);
-      const repo = this.source.getRepository(GarbageEvidence);
-      await repo.update({ id: photo.id, uploadedAt: IsNull() }, { uploadedAt: new Date() });
-      return reference(await repo.findOneByOrFail({ id: photo.id }));
-    }
-    return reference(photo);
+    if (photo.uploadedAt) return reference(photo);
+    return this.source.transaction(async manager => {
+      const plog = await this.lockPlog(manager, owner, plogId);
+      const repo = manager.getRepository(GarbageEvidence);
+      const pending = await repo.findOneBy({ id, plog: { id: plog.id } });
+      if (!pending || pending.storageKey !== photo.storageKey) throw new ConflictException('The photo was removed');
+      if (pending.uploadedAt) return reference(pending);
+      if (plog.status !== 'active') throw new ConflictException('Photo selection is closed');
+      requireRecorder(plog.recordingDevice, recorder);
+      await this.storage.put(pending.storageKey, file.buffer, pending.mediaType);
+      pending.uploadedAt = new Date();
+      await repo.update({ id }, { uploadedAt: pending.uploadedAt });
+      return reference(pending);
+    });
   }
 }

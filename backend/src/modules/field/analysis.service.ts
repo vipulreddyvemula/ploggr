@@ -117,7 +117,7 @@ export class AnalysisWorker implements OnApplicationBootstrap, OnApplicationShut
         SELECT plog_id FROM plog_analysis WHERE state IN ('queued','processing') AND next_run<=now()
         ORDER BY next_run FOR UPDATE SKIP LOCKED LIMIT 1)
         UPDATE plog_analysis a SET state='processing',lease=$1,attempts=attempts+1,next_run=now()+interval '5 minutes'
-        FROM next WHERE a.plog_id=next.plog_id RETURNING a.plog_id,a.attempts`,
+        FROM next WHERE a.plog_id=next.plog_id RETURNING a.plog_id,a.attempts,a.suspicious_evidence`,
         [lease],
       );
       const job = jobs[0]?.[0] ?? jobs[0];
@@ -187,7 +187,7 @@ export class AnalysisWorker implements OnApplicationBootstrap, OnApplicationShut
             .join('') ?? '';
         const result = normalizeDetections(JSON.parse(output), photos);
         const state =
-          result.quality === 'clear' && result.items.length > 0 && result.items.every((i) => i.certain)
+          !job.suspicious_evidence && result.quality === 'clear' && result.items.length > 0 && result.items.every((i) => i.certain)
             ? 'ready'
             : 'review';
         console.log(`[AnalysisWorker] Plog ${job.plog_id} analyzed successfully. State: ${state}, items: ${result.items.length}`);

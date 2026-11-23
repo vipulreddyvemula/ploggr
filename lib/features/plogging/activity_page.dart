@@ -9,7 +9,7 @@ import 'saved_photos.dart';
 import '../spots/spot_map.dart';
 import 'data/plog_api.dart';
 
-final _activities = FutureProvider.autoDispose
+final plogHistoryProvider = FutureProvider.autoDispose
     .family<ActivityPageData, String?>(
       (ref, before) => ref.watch(plogApiProvider).completed(before),
       retry: (_, _) => null,
@@ -28,8 +28,12 @@ class PlogActivityPage extends ConsumerStatefulWidget {
 
 class _ActivityState extends ConsumerState<PlogActivityPage> {
   final pages = <String?>[null];
-  String metrics(CompletedPlog p) =>
-      formatWalkSummary(p.seconds, meters: p.meters);
+  String metrics(CompletedPlog p) {
+    final distance = p.hasRoute == true || p.meters > 0
+        ? formatWalkDistance(p.meters)
+        : 'Distance unavailable';
+    return '${formatWalkSummary(p.seconds)} · $distance';
+  }
 
   String date(DateTime value) {
     final local = value.toLocal();
@@ -46,10 +50,12 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
         child: ref
             .watch(_detail(id))
             .when(
-              loading: () => const LinearProgressIndicator(),
-              error: (_, _) => TextButton(
-                onPressed: () => ref.invalidate(_detail(id)),
-                child: const Text('Retry loading Plog'),
+              loading: () => const AppLoading('Loading Plog'),
+              error: (_, _) => AppNotice(
+                'Could not load this Plog.',
+                status: AppStatus.failure,
+                actionLabel: 'Retry loading Plog',
+                onAction: () => ref.invalidate(_detail(id)),
               ),
               data: (plog) {
                 final route = plog.route!;
@@ -57,13 +63,23 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     EcoCard(
-                      color: AppColors.paleGreen,
+                      color: context.colors.primaryContainer,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(metrics(plog), style: AppText.title),
                           Text('Started ${date(plog.startedAt)}'),
                           Text('Finished ${date(plog.endedAt)}'),
+                          if (plog.verifiedCleanups > 0)
+                            Text('Verified cleanups: ${plog.verifiedCleanups}'),
+                          if (plog.unverifiedCleanups > 0)
+                            Text(
+                              'Unverified cleanups: ${plog.unverifiedCleanups}',
+                            ),
+                          if (plog.alreadyCollected > 0)
+                            Text(
+                              'Previously collected: ${plog.alreadyCollected}',
+                            ),
                         ],
                       ),
                     ),
@@ -103,25 +119,72 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
         children: [
           for (final cursor in pages)
             ref
-                .watch(_activities(cursor))
+                .watch(plogHistoryProvider(cursor))
                 .when(
-                  loading: () => const LinearProgressIndicator(),
-                  error: (_, _) => TextButton(
-                    onPressed: () => ref.invalidate(_activities(cursor)),
-                    child: const Text('Retry loading activities'),
+                  loading: () => const AppLoading('Loading activities'),
+                  error: (_, _) => AppNotice(
+                    'Could not load your activities.',
+                    status: AppStatus.failure,
+                    actionLabel: 'Retry loading activities',
+                    onAction: () => ref.invalidate(plogHistoryProvider(cursor)),
                   ),
                   data: (result) => Column(
                     children: [
                       if (result.items.isEmpty && cursor == null)
-                        const Text('No completed Plogs yet.'),
+                        AppNotice(
+                          'No completed Plogs yet.',
+                          actionLabel: 'Start a Plog',
+                          onAction: () => openPage(context, AppRoutes.session),
+                        ),
                       for (final plog in result.items)
-                        ListTile(
-                          title: Text(date(plog.startedAt)),
-                          subtitle: Text(metrics(plog)),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => openPage(
-                            context,
-                            '${AppRoutes.activity}/${plog.id}',
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpace.sm),
+                          child: EcoCard(
+                            onTap: () => openPage(
+                              context,
+                              '${AppRoutes.activity}/${plog.id}',
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        date(plog.startedAt),
+                                        style: AppText.heading,
+                                      ),
+                                      Text(metrics(plog)),
+                                      if (plog.hasRoute
+                                          case final bool hasRoute)
+                                        Text(
+                                          hasRoute
+                                              ? 'GPS route recorded'
+                                              : 'No GPS route',
+                                        ),
+                                      if (plog.photoCount case final int count)
+                                        Text(
+                                          '$count ${count == 1 ? 'pickup photo' : 'pickup photos'}',
+                                        ),
+                                      if (plog.pickupCount case final int count
+                                          when count > 0)
+                                        Text('$count linked sightings'),
+                                      if (plog.analysisState
+                                          case 'queued' || 'processing')
+                                        const Text('Photo analysis pending'),
+                                      if (plog.analysisState == 'review')
+                                        const Text('Awaiting review'),
+                                      if (plog.analysisState == 'failed')
+                                        const Text(
+                                          'Photo analysis unavailable',
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
                           ),
                         ),
                       if (cursor == pages.last && result.nextCursor != null)

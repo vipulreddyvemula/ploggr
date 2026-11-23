@@ -72,16 +72,18 @@ class _CleanupsPageState extends ConsumerState<CleanupsPage> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.location_on_outlined,
                 size: 16,
-                color: AppColors.primary,
+                color: context.colors.primary,
               ),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
                   '${event.distance} · ${event.date}',
-                  style: AppText.caption.copyWith(color: AppColors.ink),
+                  style: AppText.caption.copyWith(
+                    color: context.colors.onSurface,
+                  ),
                 ),
               ),
             ],
@@ -91,9 +93,9 @@ class _CleanupsPageState extends ConsumerState<CleanupsPage> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.groups_outlined,
-                color: AppColors.primary,
+                color: context.colors.primary,
                 size: 20,
               ),
               const SizedBox(width: 7),

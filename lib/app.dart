@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'features/spots/observation_sync.dart';
 import 'features/spots/spot_api.dart';
+import 'features/spots/report_sync.dart';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ploggr/core/constants/app_colors.dart';
 import 'package:ploggr/core/theme/app_theme.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
 import 'package:ploggr/routes/app_router.dart';
@@ -16,6 +16,7 @@ import 'package:ploggr/features/plogging/application/session_controller.dart'
     show sessionProvider, impactProvider;
 import 'package:ploggr/features/profile/profile_controller.dart';
 import 'package:ploggr/features/plogging/application/active_track.dart';
+import 'package:ploggr/features/plogging/data/location_source.dart';
 
 class PloggrApp extends ConsumerStatefulWidget {
   const PloggrApp({super.key});
@@ -28,10 +29,27 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
   late final AppLifecycleListener _lifecycle;
   String? _accountId;
   Timer? _sync;
+  final _syncingAccounts = <String>{};
   Future<void> sync() async {
+    final owner = ref.read(sessionControllerProvider).user?.id;
+    if (owner == null || !_syncingAccounts.add(owner)) return;
+    Future<void> attempt(Future<void> Function() job) async {
+      try {
+        await job();
+      } catch (_) {
+        // A failed operation retains its draft for the next retry.
+      }
+    }
+
     try {
-      await ref.read(observationSyncProvider).flush();
-    } catch (_) {}
+      await Future.wait([
+        attempt(() => ref.read(observationSyncProvider).flush()),
+        attempt(() => ref.read(reportSyncProvider).flushAll()),
+        attempt(() => ref.read(activeTrackProvider.notifier).syncPending()),
+      ]);
+    } finally {
+      _syncingAccounts.remove(owner);
+    }
   }
 
   @override
@@ -46,6 +64,8 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
               (id != null && id != _accountId))) {
         // Dispose per-account preview state, including any running plog timer.
         ref.invalidate(activeTrackProvider);
+        ref.invalidate(plogOfflineProvider);
+        ref.invalidate(locationSourceProvider);
         ref.invalidate(sessionProvider);
         ref.invalidate(impactProvider);
         ref.invalidate(profileProvider);
@@ -99,12 +119,11 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
       title: 'Ploggr',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeAnimationDuration: Duration.zero,
       routerConfig: router,
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.dark.copyWith(
-          systemNavigationBarColor: AppColors.background,
-          systemNavigationBarIconBrightness: Brightness.dark,
-        ),
+        value: AppTheme.systemBars(Theme.of(context).colorScheme),
         child: child!,
       ),
     );

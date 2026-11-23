@@ -44,6 +44,7 @@ Future<ProviderContainer> openApp(
   String route, {
   Size size = const Size(390, 844),
   double textScale = 1,
+  Brightness brightness = Brightness.light,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -60,6 +61,7 @@ Future<ProviderContainer> openApp(
         data: MediaQueryData(
           size: size,
           textScaler: TextScaler.linear(textScale),
+          platformBrightness: brightness,
         ),
         child: const PloggrApp(),
       ),

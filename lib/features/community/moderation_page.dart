@@ -1,10 +1,10 @@
+import '../../shared/widgets/evidence_review.dart';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../core/network/protected_api.dart';
 import '../../shared/widgets/ploggr_ui.dart';
-import '../spots/spot_editor.dart';
 import 'field_data.dart';
 
 final _image = FutureProvider.autoDispose.family(

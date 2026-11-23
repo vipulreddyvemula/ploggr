@@ -1,9 +1,12 @@
+import '../../shared/widgets/evidence_review.dart';
 import 'dart:math' as math;
 import '../home/activity_overview.dart';
 import 'dart:async';
 import '../community/field_data.dart';
 import 'place_picker.dart';
 import 'observation_sync.dart';
+import 'report_sync.dart';
+import 'spot_draft.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:material_ui/material_ui.dart';
@@ -143,7 +146,6 @@ class _ExploreState extends ConsumerState<ExplorePage> {
       initial: focus == null ? null : (point: focus!, name: area),
     );
     if (p != null && mounted) {
-      selected = null;
       zoom = 15;
       showArea(p);
     }
@@ -209,6 +211,7 @@ class _ExploreState extends ConsumerState<ExplorePage> {
             ? null
             : ref.watch(spotDetailProvider(selected!)).value);
 
+    if (first != null) marks[first.id] = first.point;
     final spots = [?first, ...list.where((s) => s.id != first?.id)];
     return AppPage(
       title: community
@@ -218,13 +221,8 @@ class _ExploreState extends ConsumerState<ExplorePage> {
           : 'Litter Map',
       root: explore || community,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
-      bottomNavigation: BottomNavBar(
-        caller: community
-            ? 'community'
-            : own
-            ? 'profile'
-            : 'explore',
-      ),
+      backTo: own ? AppRoutes.profile : AppRoutes.home,
+      bottomNavigation: const BottomNavBar(),
       actions: [
         IconButton(
           tooltip: 'Refresh spots',
@@ -258,80 +256,85 @@ class _ExploreState extends ConsumerState<ExplorePage> {
               (bounds != world || fetched.hasValue || fetched.hasError))
             Offstage(
               offstage: !mapView,
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: AppRadius.card,
-                    child: SpotMap(
-                      height: (MediaQuery.sizeOf(context).height * .42).clamp(
-                        220.0,
-                        425.0,
-                      ),
-                      points: marks,
-                      counts: counts,
-                      selected: selected,
-                      focus: focus,
-                      zoom: zoom,
-                      cameraKey: cameraKey,
-                      onPan: mapInteraction,
-                      onUnavailable: () {
-                        if (mounted) {
-                          setState(() {
-                            tab = 1;
-                            notice =
-                                'Map unavailable. Showing sightings in this area.';
-                          });
-                        }
-                      },
-                      onViewport: (v) {
-                        if (mounted && tab == 0 && bounds != v) {
-                          setState(() {
-                            bounds = v;
-                            visibleCount = 10;
-                          });
-                        }
-                      },
-                      onSelect: (id) {
-                        mapInteraction();
-                        if ((counts[id] ?? 1) > 1) {
-                          setState(() {
-                            focus = marks[id];
-                            final width =
-                                (bounds.east - bounds.west + 360) % 360;
-                            zoom =
-                                (math.log(360 / (width <= 0 ? 360 : width)) /
-                                            math.ln2 +
-                                        3)
-                                    .clamp(3, 20);
-                            cameraKey++;
-                            if (zoom >= 20) {
-                              tab = 1;
-                              notice = 'Choose a sighting from this location.';
-                            }
-                          });
-                        } else {
-                          setState(() => selected = id);
-                        }
-                      },
-                    ),
+              child: ClipRRect(
+                borderRadius: AppRadius.card,
+                child: SpotMap(
+                  height: (MediaQuery.sizeOf(context).height * .42).clamp(
+                    160.0,
+                    425.0,
                   ),
-                  Positioned(
-                    bottom: 30,
-                    right: 12,
-                    child: IconButton.filled(
-                      tooltip: 'Find near me',
-                      onPressed: locating ? null : locate,
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppColors.primary,
-                      ),
-                      icon: const Icon(Icons.my_location_rounded),
-                    ),
-                  ),
-                ],
+                  points: marks,
+                  counts: counts,
+                  categories: {
+                    for (final spot in spots) spot.id: spot.category,
+                  },
+                  selected: selected,
+                  focus: focus,
+                  zoom: zoom,
+                  cameraKey: cameraKey,
+                  onPan: mapInteraction,
+                  onUnavailable: () {
+                    if (mounted) {
+                      setState(() {
+                        tab = 1;
+                        notice =
+                            'Map unavailable. Showing sightings in this area.';
+                      });
+                    }
+                  },
+                  onViewport: (v) {
+                    if (mounted && tab == 0 && bounds != v) {
+                      setState(() {
+                        bounds = v;
+                        visibleCount = 10;
+                      });
+                    }
+                  },
+                  onSelect: (id) {
+                    mapInteraction();
+                    if ((counts[id] ?? 1) > 1) {
+                      setState(() {
+                        focus = marks[id];
+                        final width = (bounds.east - bounds.west + 360) % 360;
+                        zoom =
+                            (math.log(360 / (width <= 0 ? 360 : width)) /
+                                        math.ln2 +
+                                    3)
+                                .clamp(3, 20);
+                        cameraKey++;
+                        if (zoom >= 20) {
+                          tab = 1;
+                          notice = 'Choose a sighting from this location.';
+                        }
+                      });
+                    } else {
+                      setState(() => selected = id);
+                    }
+                  },
+                ),
               ),
             ),
-          if (notice != null) Text(notice!),
+          if (explore)
+            Wrap(
+              children: [
+                TextButton.icon(
+                  onPressed: locating ? null : locate,
+                  icon: const Icon(Icons.my_location),
+                  label: Text(locating ? 'Finding location…' : 'Near Me'),
+                ),
+                if (mapView && (first != null || focus != null))
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      focus = first?.point ?? focus;
+                      cameraKey++;
+                    }),
+                    icon: const Icon(Icons.center_focus_strong_outlined),
+                    label: const Text('Recenter'),
+                  ),
+              ],
+            ),
+          if (notice != null) AppNotice(notice!, status: AppStatus.warning),
+          if (own) const _PendingReports(),
           if (mapView) const SizedBox(height: 12),
           if (!own && ref.watch(nearby).value?.truncated == true)
             Text(
@@ -340,7 +343,7 @@ class _ExploreState extends ConsumerState<ExplorePage> {
                   : 'Zoom in to see more spots.',
               style: AppText.caption,
             ),
-          if (fetched.isLoading) const LinearProgressIndicator(),
+          if (fetched.isLoading) const AppLoading('Finding litter sightings'),
           if (fetched.hasError)
             TextButton(
               onPressed: () =>
@@ -437,6 +440,83 @@ Future<void> _startAtSpot(
   openPage(context, AppRoutes.session);
 }
 
+class _PendingReports extends ConsumerWidget {
+  const _PendingReports();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final queued = ref.watch(pendingSpotDraftsProvider);
+    if (queued.hasError) {
+      return TextButton(
+        onPressed: () => ref.invalidate(pendingSpotDraftsProvider),
+        child: const Text('Retry loading queued reports'),
+      );
+    }
+    final drafts = queued.value ?? [];
+    if (drafts.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        for (final draft in drafts)
+          ListTile(
+            title: Text(draft.place.isEmpty ? draft.category : draft.place),
+            subtitle: Text(draft.syncStatus),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  tooltip: draft.discardRequested
+                      ? 'Retry withdrawal'
+                      : 'Retry report',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () async {
+                    try {
+                      await ref.read(reportSyncProvider).flush(draft);
+                    } catch (_) {
+                      if (context.mounted) {
+                        toast(
+                          context,
+                          draft.discardRequested
+                              ? 'Withdrawal still pending.'
+                              : 'Report still queued. Check its sync status.',
+                        );
+                      }
+                    }
+                  },
+                ),
+                if (!draft.discardRequested)
+                  IconButton(
+                    tooltip: 'Discard report',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      if (!await confirmAction(
+                            context,
+                            'Discard this report?',
+                            'Discard report',
+                          ) ||
+                          !context.mounted) {
+                        return;
+                      }
+                      try {
+                        await ref.read(reportSyncProvider).discard(draft);
+                      } catch (_) {
+                        if (context.mounted) {
+                          toast(
+                            context,
+                            draft.discardRequested
+                                ? 'Withdrawal queued. Ploggr will retry when connected.'
+                                : 'Could not discard the report.',
+                          );
+                        }
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _ReportCard extends ConsumerWidget {
   const _ReportCard({
     required this.spot,
@@ -504,6 +584,10 @@ class _ReportCard extends ConsumerWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: 8,
                   children: [
+                    TextButton(
+                      onPressed: open,
+                      child: const Text('View report'),
+                    ),
                     OutlinedButton.icon(
                       onPressed: () => _openDirections(context, spot),
                       icon: const Icon(Icons.directions_outlined),
@@ -534,9 +618,9 @@ class _ReportCard extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(child: description),
                 if (!showDirections)
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
-                    color: AppColors.primary,
+                    color: context.colors.primary,
                   ),
               ],
             ),
@@ -550,10 +634,12 @@ class OpenSightings extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => ref
       .watch(exploreProvider(world))
       .when(
-        loading: () => const LinearProgressIndicator(),
-        error: (_, _) => TextButton(
-          onPressed: () => ref.invalidate(exploreProvider(world)),
-          child: const Text('Retry loading sightings'),
+        loading: () => const AppLoading('Loading sightings'),
+        error: (_, _) => AppNotice(
+          'Could not load sightings.',
+          status: AppStatus.failure,
+          actionLabel: 'Retry loading sightings',
+          onAction: () => ref.invalidate(exploreProvider(world)),
         ),
         data: (data) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -561,7 +647,7 @@ class OpenSightings extends ConsumerWidget {
             if (data.items.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('No open sightings yet.'),
+                child: AppNotice('No open sightings yet.'),
               ),
             for (final s in data.items.take(10))
               Padding(
@@ -651,6 +737,75 @@ class _SpotPageState extends ConsumerState<SpotPage> {
   }
 
   Future<void> link(Spot spot) => run(() => _startAtSpot(context, ref, spot));
+  Future<void> sighting(Spot spot, {required bool missing}) => run(() async {
+    final drafts = ref.read(plogDraftsProvider);
+    GpsSample? gps;
+    try {
+      gps = await ref.read(locationSourceProvider).photographLocation();
+    } catch (_) {}
+    if (!mounted) return;
+    final id = await drafts.queueObservation(
+      spot.id,
+      missing ? 'missing' : 'present',
+      gps: gps,
+    );
+    if (!mounted) return;
+    setState(() => notice = 'Saved on this phone. Waiting to sync.');
+    try {
+      await ref.read(observationSyncProvider).flush();
+      final receipt = await drafts.observationReceipt(id);
+      if (mounted) {
+        setState(
+          () => notice = receipt == 'verified'
+              ? (missing ? 'Marked for checking.' : 'Sighting confirmed.')
+              : receipt == 'rejected'
+              ? 'This sighting is no longer available.'
+              : 'Unverified sighting. Retry near the pin with location enabled.',
+        );
+      }
+    } catch (_) {}
+  });
+
+  Future<void> history(Spot spot) => run(() async {
+    final events = await ref.read(spotApiProvider).history(spot.id);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report history'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final event in events)
+                ListTile(
+                  title: Text(switch (event['status']) {
+                    'uploading' => 'Draft received',
+                    'open' => 'Published',
+                    'collected' => 'Collected',
+                    'hidden' => 'Hidden',
+                    'withdrawn' => 'Withdrawn',
+                    _ => '${event['status']}',
+                  }),
+                  subtitle: Text(
+                    MaterialLocalizations.of(ctx).formatMediumDate(
+                      DateTime.parse(event['changedAt'] as String).toLocal(),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  });
+
   @override
   Widget build(BuildContext context) {
     final provider = spotDetailProvider(widget.id);
@@ -699,32 +854,43 @@ class _SpotPageState extends ConsumerState<SpotPage> {
                   Text(
                     'Reported ${MaterialLocalizations.of(context).formatMediumDate(s.createdAt!.toLocal())}',
                   ),
-                if (s.status == 'open')
+                if (s.status == 'open') ...[
                   TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => run(() async {
-                            await ref
-                                .read(plogDraftsProvider)
-                                .queueObservation(s.id, 'missing');
-                            if (!mounted) return;
-                            setState(
-                              () => notice =
-                                  'Saved on this phone. Waiting to sync.',
-                            );
-                            await ref
-                                .read(observationSyncProvider)
-                                .flush()
-                                .then((_) {
-                                  if (mounted) {
-                                    setState(
-                                      () => notice = 'Marked for checking.',
-                                    );
-                                  }
-                                })
-                                .catchError((Object _) {});
-                          }),
+                    onPressed: busy ? null : () => sighting(s, missing: false),
+                    child: const Text('I can see this litter'),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : () => sighting(s, missing: true),
                     child: const Text('I couldn’t find it'),
+                  ),
+                  if (s.mine)
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => EditSpotPage(s),
+                              ),
+                            ),
+                      child: const Text('Edit report'),
+                    ),
+                ],
+                if (s.status == 'collected')
+                  OutlinedButton(
+                    onPressed: () =>
+                        openPage(context, '${AppRoutes.report}?repeat=${s.id}'),
+                    child: const Text('Report litter here again'),
+                  ),
+                if (s.previousReportId case final String previous)
+                  TextButton(
+                    onPressed: () => openPage(context, '/spots/$previous'),
+                    child: const Text('View previous sighting'),
+                  ),
+                if (s.mine)
+                  TextButton(
+                    onPressed: busy ? null : () => history(s),
+                    child: const Text('View report history'),
                   ),
                 if (s.lastSeenAt != null)
                   Text(

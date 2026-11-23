@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/constants/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../routes/app_routes.dart';
 
@@ -16,7 +15,7 @@ class AppPage extends StatelessWidget {
     this.bottomAction,
     this.actions,
     this.scroll = true,
-    this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 24),
+    this.padding = const EdgeInsets.fromLTRB(20, AppSpace.md, 20, AppSpace.xl),
     this.root = false,
     this.backTo = AppRoutes.home,
   });
@@ -36,85 +35,106 @@ class AppPage extends StatelessWidget {
         bottomAction != null &&
         keyboard > 0 &&
         MediaQuery.sizeOf(context).height - keyboard < 320;
-    return Scaffold(
-      appBar: compactKeyboard
-          ? null
-          : AppBar(
-              automaticallyImplyLeading: false,
-              leading: root
-                  ? null
-                  : IconButton(
-                      tooltip: 'Back',
-                      icon: const Icon(Icons.arrow_back_rounded, size: 22),
-                      onPressed: () => goBack(context, fallback: backTo),
-                    ),
-              title: Text(title, maxLines: 2, textAlign: TextAlign.center),
-              actions: actions ?? (root ? null : [const SizedBox(width: 48)]),
+    final router = GoRouter.maybeOf(context);
+    final fallbackOnBack =
+        !root &&
+        router != null &&
+        router.routerDelegate.currentConfiguration.isNotEmpty &&
+        ModalRoute.canPopOf(context) == false &&
+        router.state.uri.path != backTo;
+    final titleScale =
+        MediaQuery.textScalerOf(context).scale(AppText.pageTitleSize) /
+        AppText.pageTitleSize;
+    return PopScope(
+      canPop: !fallbackOnBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop &&
+            fallbackOnBack &&
+            ModalRoute.isCurrentOf(context) == true) {
+          switchPage(context, backTo);
+        }
+      },
+      child: Scaffold(
+        appBar: compactKeyboard
+            ? null
+            : AppBar(
+                toolbarHeight: kToolbarHeight * titleScale.clamp(1.0, 2.0),
+                automaticallyImplyLeading: false,
+                leading: root
+                    ? null
+                    : IconButton(
+                        tooltip: 'Back',
+                        icon: const Icon(Icons.arrow_back_rounded, size: 22),
+                        onPressed: () => goBack(context, fallback: backTo),
+                      ),
+                title: Text(title, maxLines: 2, textAlign: TextAlign.center),
+                actions: actions ?? (root ? null : [const SizedBox(width: 48)]),
+              ),
+        body: SafeArea(
+          top: false,
+          bottom: bottomNavigation == null && bottomAction == null,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: scroll
+                  ? SingleChildScrollView(
+                      key: const PageStorageKey('page-scroll'),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: padding,
+                      child: child,
+                    )
+                  : Padding(padding: padding, child: child),
             ),
-      body: SafeArea(
-        top: false,
-        bottom: bottomNavigation == null && bottomAction == null,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: scroll
-                ? SingleChildScrollView(
-                    key: const PageStorageKey('page-scroll'),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: padding,
-                    child: child,
-                  )
-                : Padding(padding: padding, child: child),
           ),
         ),
-      ),
-      bottomNavigationBar: bottomAction == null
-          ? (keyboard == 0 ? bottomNavigation : null)
-          : Padding(
-              padding: EdgeInsets.only(bottom: keyboard),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SafeArea(
-                    top: false,
-                    bottom: bottomNavigation == null,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 600),
-                      child: Padding(
-                        padding: compactKeyboard
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 2,
-                              )
-                            : const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                        child: compactKeyboard
-                            ? Row(
-                                children: [
-                                  IconButton(
-                                    tooltip: 'Hide keyboard',
-                                    icon: const Icon(
-                                      Icons.keyboard_hide_outlined,
+        bottomNavigationBar: bottomAction == null
+            ? (keyboard == 0 ? bottomNavigation : null)
+            : Padding(
+                padding: EdgeInsets.only(bottom: keyboard),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SafeArea(
+                      top: false,
+                      bottom: bottomNavigation == null,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: Padding(
+                          padding: compactKeyboard
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 2,
+                                )
+                              : const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                          child: compactKeyboard
+                              ? Row(
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Hide keyboard',
+                                      icon: const Icon(
+                                        Icons.keyboard_hide_outlined,
+                                      ),
+                                      onPressed: () => FocusManager
+                                          .instance
+                                          .primaryFocus
+                                          ?.unfocus(),
                                     ),
-                                    onPressed: () => FocusManager
-                                        .instance
-                                        .primaryFocus
-                                        ?.unfocus(),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(child: bottomAction!),
-                                ],
-                              )
-                            : bottomAction,
+                                    const SizedBox(width: 8),
+                                    Expanded(child: bottomAction!),
+                                  ],
+                                )
+                              : bottomAction,
+                        ),
                       ),
                     ),
-                  ),
-                  if (bottomNavigation != null && keyboard == 0)
-                    bottomNavigation!,
-                ],
+                    if (bottomNavigation != null && keyboard == 0)
+                      bottomNavigation!,
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }
@@ -133,10 +153,11 @@ void switchPage(BuildContext context, String location) {
 
 void goBack(BuildContext context, {String fallback = AppRoutes.home}) {
   ScaffoldMessenger.maybeOf(context)?.removeCurrentSnackBar();
-  if (context.canPop()) {
-    context.pop();
+  final navigator = Navigator.of(context);
+  if (navigator.canPop()) {
+    navigator.maybePop();
   } else {
-    context.go(fallback);
+    GoRouter.maybeOf(context)?.go(fallback);
   }
 }
 
@@ -153,7 +174,7 @@ Future<void> previewNotice(
 ) => showDialog<void>(
   context: context,
   builder: (context) => AlertDialog(
-    icon: const Icon(Icons.eco_outlined, color: AppColors.primary, size: 32),
+    icon: Icon(Icons.eco_outlined, color: context.colors.primary, size: 32),
     title: Text(title),
     content: Text(message),
     actions: [
@@ -179,7 +200,9 @@ class PreviewNote extends StatelessWidget {
     textAlign: TextAlign.center,
     style: AppText.caption.copyWith(
       fontSize: 11,
-      color: light ? Colors.white.withValues(alpha: .85) : AppColors.muted,
+      color: light
+          ? Colors.white.withValues(alpha: .85)
+          : context.colors.onSurfaceVariant,
     ),
   );
 }
@@ -220,12 +243,12 @@ class EcoCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.onTap,
-    this.color = AppColors.surface,
+    this.color,
   });
   final Widget child;
   final EdgeInsets padding;
   final VoidCallback? onTap;
-  final Color color;
+  final Color? color;
   @override
   Widget build(BuildContext context) => Container(
     decoration: const BoxDecoration(
@@ -233,10 +256,10 @@ class EcoCard extends StatelessWidget {
       boxShadow: AppShadows.soft,
     ),
     child: Material(
-      color: color,
+      color: color ?? context.colors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: AppRadius.card,
-        side: const BorderSide(color: AppColors.border, width: .7),
+        side: BorderSide(color: context.colors.outlineVariant, width: .7),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -257,10 +280,106 @@ class SectionTitle extends StatelessWidget {
     child: Row(
       children: [
         Expanded(
-          child: Text(text, style: AppText.heading.copyWith(fontSize: 18)),
+          child: Semantics(
+            header: true,
+            child: Text(text, style: AppText.heading.copyWith(fontSize: 18)),
+          ),
         ),
         ?trailing,
       ],
+    ),
+  );
+}
+
+enum AppStatus { information, success, warning, pending, failure }
+
+class AppNotice extends StatelessWidget {
+  const AppNotice(
+    this.message, {
+    super.key,
+    this.status = AppStatus.information,
+    this.actionLabel,
+    this.onAction,
+  }) : assert((actionLabel == null) == (onAction == null));
+
+  final String message;
+  final AppStatus status;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final dark = colors.brightness == Brightness.dark;
+    final (icon, background, foreground) = switch (status) {
+      AppStatus.information => (
+        Icons.info_outline,
+        colors.surfaceContainer,
+        colors.onSurface,
+      ),
+      AppStatus.success => (
+        Icons.check_circle_outline,
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
+      AppStatus.warning => (
+        Icons.warning_amber_rounded,
+        dark ? const Color(0xFF463419) : const Color(0xFFFFEBC9),
+        dark ? const Color(0xFFFFDB9C) : const Color(0xFF553708),
+      ),
+      AppStatus.pending => (
+        Icons.schedule,
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
+      AppStatus.failure => (
+        Icons.error_outline,
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: AppRadius.small,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Row(
+              children: [
+                Icon(icon, color: foreground, size: 20),
+                const SizedBox(width: AppSpace.sm),
+                Expanded(
+                  child: Semantics(
+                    liveRegion: status != AppStatus.information,
+                    child: Text(message, style: TextStyle(color: foreground)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (onAction != null)
+          TextButton(onPressed: onAction, child: Text(actionLabel!)),
+      ],
+    );
+  }
+}
+
+class AppLoading extends StatelessWidget {
+  const AppLoading(this.label, {super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpace.md),
+    child: LinearProgressIndicator(
+      semanticsLabel: label,
+      borderRadius: AppRadius.pill,
     ),
   );
 }
@@ -279,9 +398,9 @@ class FilterTabs extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(3),
     decoration: BoxDecoration(
-      color: const Color(0xFFF0F3EE),
+      color: context.colors.surfaceContainer,
       borderRadius: AppRadius.pill,
-      border: Border.all(color: AppColors.border),
+      border: Border.all(color: context.colors.outlineVariant),
     ),
     child: Row(
       children: List.generate(
@@ -290,7 +409,9 @@ class FilterTabs extends StatelessWidget {
           child: Semantics(
             selected: index == selected,
             child: Material(
-              color: selected == index ? AppColors.primary : Colors.transparent,
+              color: selected == index
+                  ? context.colors.primary
+                  : Colors.transparent,
               borderRadius: AppRadius.pill,
               child: InkWell(
                 borderRadius: AppRadius.pill,
@@ -311,8 +432,8 @@ class FilterTabs extends StatelessWidget {
                           height: 1.2,
                           fontWeight: FontWeight.w700,
                           color: selected == index
-                              ? Colors.white
-                              : AppColors.ink,
+                              ? context.colors.onPrimary
+                              : context.colors.onSurface,
                         ),
                       ),
                     ),
@@ -333,13 +454,13 @@ class StatTile extends StatelessWidget {
     required this.value,
     required this.label,
     this.icon,
-    this.color = AppColors.primary,
+    this.color,
     this.onTap,
   });
   final String value;
   final String label;
   final IconData? icon;
-  final Color color;
+  final Color? color;
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => EcoCard(
@@ -349,7 +470,7 @@ class StatTile extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon != null) ...[
-          Icon(icon, color: color, size: 23),
+          Icon(icon, color: color ?? context.colors.primary, size: 23),
           const SizedBox(height: 7),
         ],
         Text(
@@ -361,7 +482,10 @@ class StatTile extends StatelessWidget {
         Text(
           label,
           textAlign: TextAlign.center,
-          style: AppText.caption.copyWith(fontSize: 11, color: AppColors.ink),
+          style: AppText.caption.copyWith(
+            fontSize: 11,
+            color: context.colors.onSurface,
+          ),
         ),
       ],
     ),
@@ -412,6 +536,8 @@ class _AppFieldState extends State<AppField> {
     decoration: InputDecoration(
       labelText: widget.label,
       helperText: widget.helper,
+      helperMaxLines: 3,
+      errorMaxLines: 3,
       prefixIcon: Icon(widget.icon, size: 21),
       suffixIcon: widget.password
           ? IconButton(
@@ -424,7 +550,7 @@ class _AppFieldState extends State<AppField> {
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
                 size: 20,
-                color: AppColors.muted,
+                color: context.colors.onSurfaceVariant,
               ),
             )
           : null,
@@ -450,38 +576,45 @@ class LitterTypePicker extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: types
-          .map(
-            (type) => SizedBox(
-              width: (constraints.maxWidth - 16) / 3,
-              child: Semantics(
-                selected: selected == type,
-                child: Material(
-                  color: selected == type
-                      ? AppColors.primary
-                      : AppColors.surface,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppRadius.pill,
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: InkWell(
-                    borderRadius: AppRadius.pill,
-                    onTap: onChanged == null ? null : () => onChanged!(type),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            type,
-                            style: AppText.label.copyWith(
-                              color: selected == type
-                                  ? Colors.white
-                                  : AppColors.ink,
-                              fontSize: 12,
+    builder: (context, constraints) {
+      final scaled = MediaQuery.textScalerOf(context).scale(12);
+      final columns = constraints.maxWidth < 420 && scaled > 19 ? 2 : 3;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: types
+            .map(
+              (type) => SizedBox(
+                width:
+                    (constraints.maxWidth - (columns - 1) * AppSpace.sm) /
+                    columns,
+                child: Semantics(
+                  selected: selected == type,
+                  child: Material(
+                    color: selected == type
+                        ? context.colors.primary
+                        : context.colors.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: AppRadius.pill,
+                      side: BorderSide(color: context.colors.outlineVariant),
+                    ),
+                    child: InkWell(
+                      borderRadius: AppRadius.pill,
+                      onTap: onChanged == null ? null : () => onChanged!(type),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpace.sm),
+                            child: Text(
+                              type,
+                              textAlign: TextAlign.center,
+                              style: AppText.label.copyWith(
+                                color: selected == type
+                                    ? context.colors.onPrimary
+                                    : context.colors.onSurface,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ),
@@ -490,10 +623,10 @@ class LitterTypePicker extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          )
-          .toList(),
-    ),
+            )
+            .toList(),
+      );
+    },
   );
 }
 

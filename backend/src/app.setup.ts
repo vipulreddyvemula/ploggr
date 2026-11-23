@@ -6,7 +6,7 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api');
   // Keep Nest's default JSON parser for other routes. Its Express adapter checks
   // installed middleware by function name, even for path-specific handlers.
-  const routeJson = json({ limit: '2mb' });
+  const routeJson = json({ limit: '4mb' });
   const parseFinish: RequestHandler = (req, res, next) => routeJson(req, res, next);
   app.use('/api/plogs/:id/finish', parseFinish);
   app.useGlobalPipes(

@@ -24,7 +24,12 @@ class _PendingLogout implements Exception {
   const _PendingLogout();
 }
 
-typedef AccessCredential = ({String token, int generation, int revision});
+typedef AccessCredential = ({
+  String token,
+  int generation,
+  int revision,
+  String owner,
+});
 typedef SessionState = ({SessionPhase phase, SessionUser? user});
 
 final sessionControllerProvider =
@@ -151,6 +156,7 @@ class SessionController extends Notifier<SessionState> {
       token: _active!.accessToken,
       generation: generation,
       revision: _revision,
+      owner: state.user!.id,
     );
   }
 

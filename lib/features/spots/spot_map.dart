@@ -44,12 +44,15 @@ class SpotMap extends StatefulWidget {
     this.route = const [],
     this.focus,
     this.fitRoute = false,
+    this.interactive = true,
+    this.simplifyRoute = false,
     this.onPin,
     this.onCenter,
     this.onPan,
     this.onUnavailable,
     this.selected,
     this.counts = const {},
+    this.categories = const {},
     this.accuracy,
     this.accuracyPoint,
     this.breaks = const [],
@@ -62,7 +65,7 @@ class SpotMap extends StatefulWidget {
   final Map<String, RouteFix> points;
   final List<RouteFix> route;
   final RouteFix? focus;
-  final bool fitRoute;
+  final bool fitRoute, simplifyRoute, interactive;
   final ValueChanged<RouteFix>? onPin;
   final ValueChanged<String>? onSelect;
   final ValueChanged<MapViewport>? onViewport;
@@ -71,6 +74,7 @@ class SpotMap extends StatefulWidget {
   final VoidCallback? onPan, onUnavailable;
   final String? selected;
   final Map<String, int> counts;
+  final Map<String, String> categories;
   final double? accuracy;
   final RouteFix? accuracyPoint;
   final List<int> breaks;
@@ -120,8 +124,11 @@ class _SpotMapState extends State<SpotMap> {
     }
     if (!mapEquals(old.points, widget.points) ||
         old.route != widget.route ||
+        !listEquals(old.breaks, widget.breaks) ||
+        old.simplifyRoute != widget.simplifyRoute ||
         old.selected != widget.selected ||
         !mapEquals(old.counts, widget.counts) ||
+        !mapEquals(old.categories, widget.categories) ||
         old.accuracy != widget.accuracy ||
         old.accuracyPoint != widget.accuracyPoint) {
       unawaited(draw());
@@ -144,21 +151,36 @@ class _SpotMapState extends State<SpotMap> {
               ? 'F'
               : '•')
         : '';
-    final key = 'pin-$text-$selected-$routePoint';
+    final category = widget.categories[id];
+    final key = 'pin-$text-$selected-$routePoint-$category';
     if (icons.contains(key)) return key;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)..scale(2);
     final color = selected
         ? const Color(0xff103f20)
+        : count > 1
+        ? const Color(0xff355464)
         : routePoint
         ? const Color(0xff145e91)
-        : const Color(0xff976115);
-    final path = Path()
-      ..moveTo(18, 43)
-      ..cubicTo(16, 37, 2, 25, 2, 18)
-      ..arcToPoint(const Offset(34, 18), radius: const Radius.circular(16))
-      ..cubicTo(34, 25, 20, 37, 18, 43)
-      ..close();
+        : switch (category) {
+            'Plastic' => const Color(0xff3e5880),
+            'Paper' => const Color(0xff765522),
+            'Glass' => const Color(0xff25644c),
+            'Metal' => const Color(0xff4a5660),
+            'E-waste' => const Color(0xff704d78),
+            _ => const Color(0xff86551c),
+          };
+    final path = count > 1
+        ? (Path()..addOval(const Rect.fromLTWH(1, 1, 34, 34)))
+        : (Path()
+            ..moveTo(18, 43)
+            ..cubicTo(16, 37, 2, 25, 2, 18)
+            ..arcToPoint(
+              const Offset(34, 18),
+              radius: const Radius.circular(16),
+            )
+            ..cubicTo(34, 25, 20, 37, 18, 43)
+            ..close());
     canvas.drawPath(path, Paint()..color = color);
     canvas.drawPath(
       path,
@@ -224,6 +246,15 @@ class _SpotMapState extends State<SpotMap> {
               circleStrokeWidth: 1,
             ),
           );
+          await map.addCircle(
+            CircleOptions(
+              geometry: coordinates(location),
+              circleRadius: 6,
+              circleColor: '#146a93',
+              circleStrokeColor: '#ffffff',
+              circleStrokeWidth: 2,
+            ),
+          );
         }
         final ends = [
           0,
@@ -232,12 +263,18 @@ class _SpotMapState extends State<SpotMap> {
         ];
         for (var n = 1; n < ends.length; n++) {
           if (ends[n] - ends[n - 1] < 2) continue;
+          final start = ends[n - 1];
+          final end = ends[n];
+          final stride = widget.simplifyRoute
+              ? (route.length / 1000).ceil()
+              : 1;
           await map.addLine(
             LineOptions(
-              geometry: route
-                  .sublist(ends[n - 1], ends[n])
-                  .map(coordinates)
-                  .toList(),
+              geometry: [
+                for (var i = start; i < end - 1; i += stride)
+                  coordinates(route[i]),
+                coordinates(route[end - 1]),
+              ],
               lineColor: '#156444',
               lineWidth: 5,
             ),
@@ -318,6 +355,10 @@ class _SpotMapState extends State<SpotMap> {
           Listener(
             onPointerMove: widget.onPan == null ? null : (_) => widget.onPan!(),
             child: MapLibreMap(
+              scrollGesturesEnabled: widget.interactive,
+              zoomGesturesEnabled: widget.interactive,
+              rotateGesturesEnabled: widget.interactive,
+              tiltGesturesEnabled: widget.interactive,
               trackCameraPosition: true,
               gestureRecognizers:
                   widget.onPin != null || widget.onViewport != null

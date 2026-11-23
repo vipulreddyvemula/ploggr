@@ -298,7 +298,7 @@ export class CommunityController {
     const reports = await this.db
       .query(`SELECT r.id,r.category,r.place FROM litter_reports r WHERE r.status='open' AND
       (EXISTS(SELECT 1 FROM litter_report_flags WHERE report_id=r.id) OR
-      (SELECT count(DISTINCT user_id) FROM spot_observations WHERE report_id=r.id AND outcome='missing' AND created_at>coalesce(r.last_seen_at,r.created_at))>=2) LIMIT 100`);
+      (SELECT count(DISTINCT user_id) FROM spot_observations WHERE report_id=r.id AND outcome='missing' AND verification IN ('verified','legacy') AND coalesce(observed_at,created_at)>coalesce(r.last_seen_at,r.created_at))>=2) LIMIT 100`);
     return { posts, reports };
   }
   @Put('moderation/:kind/:id/keep')

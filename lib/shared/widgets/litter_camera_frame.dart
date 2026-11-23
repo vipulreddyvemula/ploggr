@@ -19,6 +19,9 @@ class LitterCameraFrame extends StatelessWidget {
     this.showGuide = true,
     this.banner,
     this.help,
+    this.showInstruction = true,
+    this.capturing = false,
+    this.onSwitch,
   });
   final Widget background, galleryIcon;
   final Widget? banner, help;
@@ -26,7 +29,8 @@ class LitterCameraFrame extends StatelessWidget {
   final String galleryLabel, shutterLabel, flashLabel;
   final VoidCallback onBack;
   final VoidCallback? onGallery, onCapture, onFlash;
-  final bool flash, showGuide;
+  final bool flash, showGuide, showInstruction, capturing;
+  final VoidCallback? onSwitch;
   @override
   Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
     value: SystemUiOverlayStyle.light,
@@ -64,8 +68,6 @@ class LitterCameraFrame extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   background,
-                  if (showGuide)
-                    ColoredBox(color: Colors.black.withValues(alpha: .07)),
                   if (banner != null)
                     Positioned(top: 18, left: 12, right: 12, child: banner!),
                   if (showGuide)
@@ -73,10 +75,12 @@ class LitterCameraFrame extends StatelessWidget {
                       child: FractionallySizedBox(
                         widthFactor: .77,
                         heightFactor: .46,
-                        child: CustomPaint(painter: _ViewfinderPainter()),
+                        child: IgnorePointer(
+                          child: CustomPaint(painter: _ViewfinderPainter()),
+                        ),
                       ),
                     ),
-                  if (showGuide)
+                  if (showGuide && showInstruction)
                     Positioned(
                       bottom: 22,
                       left: 24,
@@ -104,24 +108,37 @@ class LitterCameraFrame extends StatelessWidget {
                 ],
               ),
             ),
+            if (capturing)
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  'Saving photo…',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    tooltip: galleryLabel,
-                    onPressed: onGallery,
-                    icon: galleryIcon,
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        tooltip: galleryLabel,
+                        onPressed: onGallery,
+                        icon: galleryIcon,
+                      ),
+                    ),
                   ),
                   Semantics(
                     label: shutterLabel,
                     enabled: onCapture != null,
                     button: true,
-                    child: InkWell(
-                      onTap: onCapture,
-                      borderRadius: AppRadius.pill,
-                      child: Container(
+                    child: IconButton(
+                      onPressed: onCapture,
+                      padding: EdgeInsets.zero,
+                      icon: Container(
                         width: 72,
                         height: 72,
                         padding: const EdgeInsets.all(5),
@@ -140,16 +157,34 @@ class LitterCameraFrame extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: flashLabel,
-                    onPressed: onFlash,
-                    icon: Icon(
-                      flash ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                      color: onFlash == null
-                          ? Colors.white38
-                          : flash
-                          ? AppColors.gold
-                          : Colors.white,
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (onSwitch != null)
+                          IconButton(
+                            tooltip: 'Switch camera',
+                            onPressed: onSwitch,
+                            icon: const Icon(
+                              Icons.cameraswitch_outlined,
+                              color: Colors.white,
+                            ),
+                          ),
+                        IconButton(
+                          tooltip: flashLabel,
+                          onPressed: onFlash,
+                          icon: Icon(
+                            flash
+                                ? Icons.flash_on_rounded
+                                : Icons.flash_off_rounded,
+                            color: onFlash == null
+                                ? Colors.white38
+                                : flash
+                                ? AppColors.gold
+                                : Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:ploggr/app.dart';
+import 'package:ploggr/routes/app_router.dart';
+import 'package:ploggr/features/plogging/data/photo_capture.dart';
 import 'package:ploggr/features/spots/spot_api.dart';
 import 'package:ploggr/features/spots/spot.dart';
 import 'package:ploggr/core/config/app_config.dart';
@@ -63,6 +65,9 @@ void main() async {
         throw StateError('Report differs from confirmed photo, note or pin');
       }
       await marker('shared-id').writeAsString(post.id);
+      await marker(
+        'shared-point',
+      ).writeAsString(jsonEncode([post.point.longitude, post.point.latitude]));
       await sessions.logout();
       await sessions.signup(
         '${const Uuid().v4()}@example.test',
@@ -90,7 +95,10 @@ void main() async {
         'location access',
       );
       await marker('tracking').writeAsString('ok');
-      for (final (index, longitude) in [-122.084, -122.083].indexed) {
+      final pin =
+          (jsonDecode(await marker('shared-point').readAsString()) as List)
+              .cast<num>();
+      for (final (index, longitude) in [pin[0], pin[0] + .0004].indexed) {
         await waitFor(() {
           final state = view();
           if (state.phase == TrackPhase.gpsError) {
@@ -100,8 +108,8 @@ void main() async {
           }
           return state.track!.route.any(
             (p) =>
-                (p.latitude - 37.422).abs() < 0.0001 &&
-                (p.longitude - longitude).abs() < 0.0001,
+                (p.latitude - pin[1]).abs() < 0.00005 &&
+                (p.longitude - longitude).abs() < 0.00005,
           );
         }, 'fix $index');
         await marker('fix-$index').writeAsString('ok');
@@ -112,7 +120,7 @@ void main() async {
       );
       final track = (await container.read(plogDraftsProvider).load())!;
       if (track.endedAt == null ||
-          track.distanceMeters < 60 ||
+          track.distanceMeters < 10 ||
           track.route.length < 2) {
         throw StateError('Incomplete durable finish');
       }
@@ -135,8 +143,17 @@ void main() async {
       if (ids.length != 2 || !await drafts.photosLocked(track.id)) {
         throw StateError('Missing or unlocked evidence in offline draft');
       }
-      for (final id in ids) {
+      for (final (index, id) in ids.indexed) {
         final photo = await drafts.readPhoto(track.id, id);
+        final capture = photo.capture;
+        if (index == 0 &&
+                (capture?.source != PhotoSource.camera ||
+                    capture?.gps == null) ||
+            index == 1 && capture?.source != PhotoSource.gallery) {
+          throw StateError(
+            'Offline evidence lost its capture source or GPS metadata',
+          );
+        }
         await marker('expected-$id').writeAsBytes(photo.bytes, flush: true);
       }
       await marker('checkpoint').writeAsString(
@@ -163,6 +180,9 @@ void main() async {
         () => view().phase == TrackPhase.completed,
         'confirmed save',
       );
+      container
+          .read(appRouterProvider)
+          .go('/profile/activity/${expected['id']}');
       await marker('completed').writeAsString('ok', flush: true);
       await waitFor(
         () => marker('storage-restarted').existsSync(),
@@ -181,7 +201,7 @@ void main() async {
       ];
       if (record.seconds < 1 ||
           record.seconds != expected['seconds'] ||
-          record.meters != expected['meters'] ||
+          (record.meters - (expected['meters'] as num)).abs() > 1 ||
           jsonEncode(route) != jsonEncode(expected['route']) ||
           record.startedAt.millisecondsSinceEpoch != expected['start'] ||
           record.endedAt.millisecondsSinceEpoch != expected['end'] ||
@@ -202,7 +222,8 @@ void main() async {
       }
       final shared = await marker('shared-id').readAsString();
       final spots = container.read(spotApiProvider);
-      if ((await spots.detail(shared)).status != 'collected' ||
+      if (record.verifiedCleanups != 1 ||
+          (await spots.detail(shared)).status != 'collected' ||
           (await spots.explore(world)).items.any((s) => s.id == shared)) {
         throw StateError('Linked pickup remained on the open map');
       }

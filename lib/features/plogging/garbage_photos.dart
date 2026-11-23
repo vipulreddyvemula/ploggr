@@ -1,23 +1,19 @@
-import 'application/active_track.dart';
-import 'package:uuid/uuid.dart';
+import '../../shared/widgets/evidence_review.dart';
 import '../spots/spot_draft.dart';
-import 'dart:async';
 import '../spots/live_camera.dart';
 import '../spots/photo_picker.dart';
-import '../spots/observation_sync.dart';
 import '../spots/spot_api.dart';
 import '../spots/spot.dart';
 import '../spots/explore_page.dart' show SpotPhotoTile;
 import '../spots/place_picker.dart';
 import 'data/location_source.dart';
+import 'data/photo_capture.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'data/plog_drafts.dart';
 import '../../shared/widgets/ploggr_ui.dart';
-import '../spots/spot_editor.dart';
 
 const _maxBytes = 8 * 1024 * 1024;
 
@@ -78,8 +74,11 @@ class GarbagePhotos extends ConsumerStatefulWidget {
     this.onSave,
     this.inlineAdd = true,
     this.onAvailable,
+    this.editing = true,
+    this.uploads = const {},
   });
-  final bool inlineAdd;
+  final bool inlineAdd, editing;
+  final Map<String, double> uploads;
   final ValueChanged<bool>? onAvailable;
   final String plogId;
   final VoidCallback? onSave;
@@ -92,7 +91,8 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
   late final drafts = ref.read(plogDraftsProvider);
   List<String> ids = const [];
   List<Map<String, Object?>> observations = const [];
-  String? status;
+  String? status, selectedPhoto;
+  bool preparing = false;
   bool busy = true;
   String? error;
   @override
@@ -107,41 +107,30 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
       final pending = recover ? await drafts.pendingPhoto(id) : null;
       if (pending != null) {
         try {
-          final lost = await picker.retrieveLostData();
-          final file = lost.files?.firstOrNull;
-          if (lost.exception != null) throw lost.exception!;
-          if (file != null) {
-            if (await file.length() > _maxBytes) {
-              throw const FormatException('Choose a photo of 8 MiB or less.');
-            }
-            final bytes = await file.readAsBytes();
-            await drafts.storePhoto(id, pending, await photoType(bytes), bytes);
-          } else {
+          final recovery = await PhotoRecovery.open(drafts.scope, pending);
+          final shot = await recovery.recover(picker);
+          if (shot == null) {
             await drafts.removePhoto(id, pending);
+          } else {
+            try {
+              await saveSelection(id, pending, shot);
+              status = 'Recovered your pickup photo.';
+            } on FormatException {
+              await recovery.clear();
+              await drafts.removePhoto(id, pending);
+              rethrow;
+            }
+            await recovery.clear();
           }
         } catch (e) {
-          await drafts.removePhoto(id, pending);
           error = e is FormatException
               ? e.message
-              : 'That selection could not be recovered. Choose the photo again.';
+              : 'Could not recover the pickup photo. Check device storage and retry.';
         }
       }
       final previous = await SpotDraft.previousPickup(drafts.scope, id);
       if (previous != null) {
         try {
-          if (previous.picking && recover) {
-            final file = (await picker.retrieveLostData()).files?.firstOrNull;
-            if (file != null && await file.length() <= _maxBytes) {
-              final bytes = await file.readAsBytes();
-              await previous.add((
-                id: const Uuid().v4(),
-                type: await photoType(bytes),
-                bytes: bytes,
-              ));
-            }
-            previous.picking = false;
-            await previous.save();
-          }
           if (previous.photos.isNotEmpty) {
             await drafts.recoverPickupPhotos(id, await previous.readPhotos());
             status = 'Recovered pickup photos from your earlier draft.';
@@ -162,8 +151,29 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
     }
   }
 
-  Future<void> add({bool gallery = false}) async {
-    if (busy) return;
+  Future<PhotoCapture> saveSelection(
+    String plogId,
+    String photoId,
+    CameraPhoto shot,
+  ) async {
+    if (mounted) setState(() => preparing = true);
+    try {
+      final prepared = await preparePhoto(shot.file, capture: shot.capture);
+      await drafts.storePhoto(
+        plogId,
+        photoId,
+        'image/jpeg',
+        prepared.bytes,
+        capture: prepared.capture,
+      );
+      return prepared.capture;
+    } finally {
+      if (mounted) setState(() => preparing = false);
+    }
+  }
+
+  Future<void> add({bool gallery = false, String? replacing}) async {
+    if (busy || !widget.editing) return;
     final activity = widget.plogId;
     widget.onAvailable?.call(false);
     setState(() {
@@ -172,49 +182,60 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
       status = null;
     });
     String? pending;
+    var preserve = false;
+    var retryRecovery = false;
     try {
-      pending = await drafts.reservePhoto(activity);
+      if (await drafts.pendingPhoto(activity) != null) {
+        retryRecovery = true;
+        return;
+      }
+      pending = await drafts.reservePhoto(activity, replacing: replacing);
+      final recovery = await PhotoRecovery.open(drafts.scope, pending);
       if (!mounted) return;
       Object? result = gallery
           ? 'gallery'
           : await Navigator.push<Object?>(
               context,
               MaterialPageRoute(
-                builder: (_) => const LiveCamera(title: 'Add pickup'),
+                builder: (_) =>
+                    LiveCamera(recovery: recovery, title: 'Add pickup'),
               ),
             );
-      final walk = ref.read(activeTrackProvider);
-      final fix =
-          result is XFile &&
-              walk.phase == TrackPhase.tracking &&
-              walk.track?.id == activity
-          ? ref.read(locationSourceProvider).recentFix
-          : null;
       if (result == 'gallery') {
-        result = await picker.pickImage(
-          source: ImageSource.gallery,
-          maxWidth: 2400,
-          maxHeight: 2400,
-          imageQuality: 85,
-          requestFullMetadata: false,
-        );
+        if (!mounted) return;
+        result = await recovery.pickGallery(picker);
       }
-      if (result is! XFile) return;
-      if (await result.length() > _maxBytes) {
-        throw const FormatException('Choose a photo of 8 MiB or less.');
-      }
-      final bytes = await result.readAsBytes();
+      if (result is! CameraPhoto) return;
+      preserve = true;
+      if (!mounted) return;
       final photo = pending;
-      await drafts.storePhoto(activity, photo, await photoType(bytes), bytes);
+      late final PhotoCapture capture;
+      try {
+        capture = await saveSelection(activity, photo, result);
+      } on FormatException {
+        preserve = false;
+        await recovery.clear();
+        rethrow;
+      }
       pending = null;
+      await recovery.clear();
       if (!mounted) return;
       final saved = await drafts.photoIds(activity);
       if (!mounted) return;
       setState(() {
         ids = saved;
-        status = 'Pickup saved on this phone.';
+        selectedPhoto = photo;
+        status = replacing == null
+            ? 'Pickup saved on this phone.'
+            : 'Replacement saved on this phone.';
       });
-      await match(photo, fix: fix);
+      final sample = capture.gps;
+      await match(
+        photo,
+        fix: sample != null && sample.freshAt(capture.capturedAt)
+            ? sample.point
+            : null,
+      );
     } catch (e) {
       if (mounted) {
         setState(
@@ -222,12 +243,21 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
               ? e.message
               : e is StateError
               ? e.message
+              : preserve
+              ? 'Could not save the photo. Check device storage and tap Add pickup to retry.'
               : 'Could not add this photo. Try again.',
         );
       }
     } finally {
-      if (pending != null) await drafts.removePhoto(activity, pending);
-      if (mounted) await refresh();
+      if (pending != null && !preserve) {
+        try {
+          await drafts.removePhoto(activity, pending);
+        } catch (_) {
+          error ??=
+              'Could not clear the photo selection. Retry adding the photo.';
+        }
+      }
+      if (mounted) await refresh(recover: retryRecovery);
     }
   }
 
@@ -329,22 +359,13 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
     );
     if (!mounted) return;
     setState(
-      () => status = 'Spot update saved on this phone. Waiting to sync.',
-    );
-    unawaited(
-      ref
-          .read(observationSyncProvider)
-          .flush(plog: activity)
-          .then((_) {
-            if (mounted) {
-              setState(() => status = 'Spot updated on the litter map.');
-            }
-          })
-          .catchError((Object _) {}),
+      () => status =
+          'Cleanup claim pending. It will be checked when this Plog saves.',
     );
   }
 
   Future<void> remove(String id) async {
+    if (!await confirmPhotoRemoval(context) || !mounted || busy) return;
     setState(() => busy = true);
     try {
       await drafts.removePhoto(widget.plogId, id);
@@ -355,93 +376,120 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SectionTitle('Pickup photos (${ids.length}/6)'),
-      if (status != null) Semantics(liveRegion: true, child: Text(status!)),
-      if (error != null) Text(error!),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final (i, id) in ids.indexed)
-            SizedBox(
-              width: 96,
-              height: 96,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ref
-                      .watch(_thumbnail((widget.plogId, id)))
-                      .when(
-                        data: (b) => GestureDetector(
-                          onTap: () => viewPhoto(context, MemoryImage(b)),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.memory(
-                              b,
-                              fit: BoxFit.cover,
-                              cacheWidth: 200,
-                              semanticLabel: 'Garbage photo ${i + 1}',
-                            ),
-                          ),
-                        ),
-                        loading: () => const CircularProgressIndicator(),
-                        error: (_, _) => const Icon(Icons.broken_image),
-                      ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: IconButton.filled(
-                      tooltip: 'Remove photo ${i + 1}',
-                      onPressed:
-                          busy || observations.any((o) => o['photo'] == id)
-                          ? null
-                          : () => remove(id),
-                      icon: const Icon(Icons.close, size: 16),
-                    ),
-                  ),
-                ],
+  Widget build(BuildContext context) {
+    final selected = ids.contains(selectedPhoto)
+        ? selectedPhoto
+        : ids.firstOrNull;
+    final progress = widget.uploads[selected];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (preparing) const AppLoading('Preparing pickup photo'),
+        if (widget.uploads.isNotEmpty)
+          Text(
+            '${widget.uploads.values.where((value) => value == 1).length} of ${ids.length} photos uploaded',
+          ),
+
+        if (status != null)
+          AppNotice(
+            status!,
+            status: observations.any((o) => o['receipt'] == null)
+                ? AppStatus.pending
+                : AppStatus.success,
+          ),
+        if (error != null) AppNotice(error!, status: AppStatus.failure),
+        EvidenceReview(
+          title: 'Pickup photos',
+          photos: ids,
+          selected: selected,
+          onSelect: (id) => setState(() => selectedPhoto = id),
+          image: (id, thumbnail) => ref
+              .watch(_thumbnail((widget.plogId, id)))
+              .when(
+                data: (bytes) => EvidenceImage(
+                  image: MemoryImage(bytes),
+                  thumbnail: thumbnail,
+                  label: 'pickup photo ${ids.indexOf(id) + 1}',
+                ),
+                loading: () => const AppLoading('Loading photo'),
+                error: (_, _) => TextButton(
+                  onPressed: () =>
+                      ref.invalidate(_thumbnail((widget.plogId, id))),
+                  child: const Text('Retry photo'),
+                ),
               ),
-            ),
+          status: progress != null && progress >= 0 && progress < 1
+              ? LinearProgressIndicator(
+                  value: progress,
+                  semanticsLabel: 'Uploading pickup photo',
+                )
+              : Padding(
+                  padding: const EdgeInsets.only(top: AppSpace.sm),
+                  child: Text(switch (progress) {
+                    final double value when value < 0 =>
+                      'Upload failed · photo saved on this device',
+                    1 => 'Uploaded',
+                    _ => 'Saved on this device',
+                  }, style: AppText.caption),
+                ),
+          actions: [
+            if (widget.editing && selected != null) ...[
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final gallery = await choosePhotoReplacement(context);
+                        if (mounted && gallery != null) {
+                          await add(gallery: gallery, replacing: selected);
+                        }
+                      },
+                child: const Text('Retake or replace'),
+              ),
+              TextButton(
+                onPressed: busy ? null : () => remove(selected),
+                child: const Text('Remove photo'),
+              ),
+            ],
+          ],
+        ),
+        if (widget.editing && ids.length < 6) ...[
+          if (widget.inlineAdd)
+            PrimaryButton('Add pickup', onPressed: busy ? null : () => add()),
+          TextButton.icon(
+            onPressed: busy ? null : () => add(gallery: true),
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('Choose from gallery'),
+          ),
         ],
-      ),
-      if (ids.length < 6) ...[
-        if (widget.inlineAdd)
-          PrimaryButton('Add pickup', onPressed: busy ? null : () => add()),
-        TextButton.icon(
-          onPressed: busy ? null : () => add(gallery: true),
-          icon: const Icon(Icons.photo_library_outlined),
-          label: const Text('Choose from gallery'),
-        ),
+        if (widget.editing &&
+            selected != null &&
+            !observations.any((o) => o['photo'] == selected))
+          TextButton(
+            onPressed: busy
+                ? null
+                : () async {
+                    setState(() => busy = true);
+                    try {
+                      await match(selected, choose: true);
+                    } finally {
+                      if (mounted) await refresh();
+                    }
+                  },
+            child: const Text('Link pickup to a reported spot'),
+          ),
+        if (ids.isEmpty)
+          const Text(
+            'Add at least one photo to save your Plog.',
+            style: AppText.caption,
+          ),
+        if (widget.onSave != null) ...[
+          const SizedBox(height: 16),
+          PrimaryButton(
+            'Save Plog',
+            onPressed: busy || ids.isEmpty ? null : widget.onSave,
+          ),
+        ],
       ],
-      if (ids.isNotEmpty && !observations.any((o) => o['photo'] == ids.last))
-        TextButton(
-          onPressed: busy
-              ? null
-              : () async {
-                  setState(() => busy = true);
-                  try {
-                    await match(ids.last, choose: true);
-                  } finally {
-                    if (mounted) await refresh();
-                  }
-                },
-          child: const Text('Link pickup to a reported spot'),
-        ),
-      if (ids.isEmpty)
-        const Text(
-          'Add at least one photo to save your Plog.',
-          style: AppText.caption,
-        ),
-      if (widget.onSave != null) ...[
-        const SizedBox(height: 16),
-        PrimaryButton(
-          'Save Plog',
-          onPressed: busy || ids.isEmpty ? null : widget.onSave,
-        ),
-      ],
-    ],
-  );
+    );
+  }
 }

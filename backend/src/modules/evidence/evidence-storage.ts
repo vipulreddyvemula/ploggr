@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, GetObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import type { Environment } from '../../config/environment';
 
 @Injectable()
@@ -37,6 +37,12 @@ export class EvidenceStorage implements OnModuleDestroy {
       if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) throw new NotFoundException();
       throw new ServiceUnavailableException('Image storage is unavailable');
     }
+  }
+
+  async delete(key: string): Promise<void> {
+    if (!this.client) throw new ServiceUnavailableException('Image storage is unavailable');
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+      { abortSignal: AbortSignal.timeout(10000) });
   }
 
   onModuleDestroy() { this.client?.destroy(); }

@@ -28,7 +28,7 @@ class _LitterMapPageState extends ConsumerState<LitterMapPage> {
     return AppPage(
       title: 'Litter Map',
       scroll: false,
-      bottomNavigation: const BottomNavBar(caller: 'explore'),
+      bottomNavigation: const BottomNavBar(),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Column(
         children: [
@@ -59,8 +59,8 @@ class _LitterMapPageState extends ConsumerState<LitterMapPage> {
                   child: IconButton.filled(
                     tooltip: 'Reset sample map',
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.ink,
+                      backgroundColor: context.colors.surface,
+                      foregroundColor: context.colors.onSurface,
                     ),
                     onPressed: () {
                       _mapController.value = Matrix4.identity();

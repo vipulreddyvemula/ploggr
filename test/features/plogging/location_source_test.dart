@@ -54,7 +54,7 @@ void main() {
     final source = LocationSource(device);
     await source.requestAccess();
     final route = <RouteFix>[];
-    final sub = source.fixes().listen(route.add);
+    final sub = source.fixes().listen((fix) => route.add(fix.point));
     Position fix(DateTime time) => Position(
       latitude: 17.5,
       longitude: 78.1,

@@ -8,6 +8,7 @@ import '../spots/spot_map.dart';
 import '../spots/spot_api.dart';
 import 'application/active_track.dart';
 import 'data/plog_drafts.dart';
+import 'data/plog_track.dart';
 import 'garbage_photos.dart';
 
 class LivePlogPage extends ConsumerStatefulWidget {
@@ -18,9 +19,11 @@ class LivePlogPage extends ConsumerStatefulWidget {
 
 class _LivePlogState extends ConsumerState<LivePlogPage> {
   final photos = GlobalKey<GarbagePhotosState>();
-  bool canAdd = false, follow = true;
+  bool canAdd = false, follow = true, finishing = false;
   int cameraKey = 0;
   Future<void> finish() async {
+    if (finishing) return;
+    finishing = true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -40,8 +43,12 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
         ],
       ),
     );
-    if (ok == true && mounted) {
-      await ref.read(activeTrackProvider.notifier).selectEvidence();
+    try {
+      if (ok == true && mounted) {
+        await ref.read(activeTrackProvider.notifier).selectEvidence();
+      }
+    } finally {
+      finishing = false;
     }
   }
 
@@ -55,13 +62,22 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
       ref.invalidate(clusterProvider);
       ref.invalidate(mySpotsProvider);
       ref.invalidate(fieldData);
-      switchPage(context, '${AppRoutes.activity}/${view.track!.id}');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final view = ref.watch(activeTrackProvider),
+    final view = ref.watch(
+          activeTrackProvider.select(
+            (v) => (
+              phase: v.phase,
+              track: v.track,
+              error: v.error,
+              uploads: v.uploads,
+              completion: v.completion,
+            ),
+          ),
+        ),
         controller = ref.read(activeTrackProvider.notifier);
     final phase = view.phase, track = view.track;
     final linked = track == null
@@ -75,10 +91,29 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
         ),
     };
     final ongoing =
-        track != null && track.endedAt == null && phase != TrackPhase.conflict;
+        track != null &&
+        track.endedAt == null &&
+        phase != TrackPhase.conflict &&
+        phase != TrackPhase.otherDevice;
     final ended = track?.endedAt != null;
+    final saved = phase == TrackPhase.completed;
+    final offline = ref.watch(plogOfflineProvider);
+    final recovering =
+        phase == TrackPhase.idle &&
+        ref.watch(resumablePlogProvider).value == true;
+    final recording = switch (phase) {
+      TrackPhase.tracking =>
+        track!.route.isEmpty ? 'Waiting for GPS' : 'Recording route',
+      TrackPhase.noRoute => 'Route recording off',
+      TrackPhase.gpsError => 'GPS unavailable',
+      TrackPhase.paused => 'Recording paused',
+      TrackPhase.locating => 'Checking location access',
+      _ => null,
+    };
     return AppPage(
-      title: ended
+      title: saved
+          ? 'Plog saved'
+          : ended
           ? 'Review your Plog'
           : phase == TrackPhase.paused
           ? 'Plog paused'
@@ -99,8 +134,6 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                     TextButton.icon(
                       onPressed: phase == TrackPhase.paused
                           ? controller.resume
-                          : phase == TrackPhase.locating
-                          ? null
                           : controller.pause,
                       icon: Icon(
                         phase == TrackPhase.paused
@@ -123,9 +156,25 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (recovering)
+            const AppNotice(
+              'A Plog is saved on this device. Resume to recover your route and pickups.',
+            ),
+          if (saved)
+            const AppNotice(
+              'Your Plog is saved to your account.',
+              status: AppStatus.success,
+            ),
+          if (offline && !saved)
+            AppNotice(
+              ongoing
+                  ? 'Offline · This Plog stays on this device while you walk.'
+                  : 'Offline · Your local draft stays on this device.',
+              status: AppStatus.pending,
+            ),
           if (track != null) ...[
             EcoCard(
-              color: AppColors.paleGreen,
+              color: context.colors.primaryContainer,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -133,16 +182,32 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                     ended ? 'Session summary' : 'Active time',
                     style: AppText.label,
                   ),
-                  Text(
-                    view.elapsed.toString().split('.').first.padLeft(8, '0'),
-                    style: AppText.hero.copyWith(color: AppColors.forest),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final elapsed = ref.watch(
+                        activeTrackProvider.select((v) => v.elapsed),
+                      );
+                      return FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          elapsed.toString().split('.').first.padLeft(8, '0'),
+                          style: AppText.hero.copyWith(
+                            color: context.colors.onPrimaryContainer,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   Text(
-                    track.route.isEmpty
+                    view.completion != null && track.route.isNotEmpty
+                        ? '${formatWalkDistance(view.completion!.meters)} recorded by GPS'
+                        : track.route.isEmpty
                         ? 'Distance unavailable'
-                        : '${formatWalkDistance(track.distanceMeters)} recorded',
+                        : '${formatWalkDistance(track.distanceMeters)} · GPS estimate on this device',
                     style: AppText.heading,
                   ),
+                  if (recording != null) Text(recording, style: AppText.label),
                 ],
               ),
             ),
@@ -155,6 +220,7 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   route: track.route,
                   breaks: track.breaks,
                   fitRoute: ended,
+                  simplifyRoute: !ended,
                   focus: follow
                       ? track.route.lastOrNull ?? pins.values.firstOrNull
                       : null,
@@ -177,48 +243,131 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
             ],
           ],
           if (view.error != null)
-            Semantics(liveRegion: true, child: Text(view.error!)),
-          if (phase == TrackPhase.locating)
-            const Text('Checking location access…'),
-          if (phase == TrackPhase.tracking && track!.route.isEmpty)
-            const Text('Waiting for a GPS fix…'),
-          if (phase == TrackPhase.noRoute)
-            const Text('Plogging without a route.'),
+            AppNotice(
+              view.error!,
+              status: phase == TrackPhase.gpsError
+                  ? AppStatus.warning
+                  : AppStatus.failure,
+            ),
+
           if ([TrackPhase.gpsError, TrackPhase.locating].contains(phase))
             TextButton(
               onPressed: controller.withoutRoute,
               child: const Text('Continue without a route'),
             ),
-          if ([TrackPhase.gpsError, TrackPhase.noRoute].contains(phase))
+          if (phase == TrackPhase.tracking)
+            TextButton(
+              onPressed: controller.withoutRoute,
+              child: const Text('Stop tracking GPS'),
+            ),
+          if ([TrackPhase.gpsError, TrackPhase.noRoute].contains(phase) &&
+              track!.route.length < PlogTrack.maxPoints)
             TextButton(
               onPressed: controller.retryGps,
               child: const Text('Retry GPS'),
             ),
-          if (phase == TrackPhase.starting || phase == TrackPhase.saving)
-            const LinearProgressIndicator(),
+          if ([
+            TrackPhase.starting,
+            TrackPhase.saving,
+            TrackPhase.cancelling,
+          ].contains(phase))
+            AppLoading(switch (phase) {
+              TrackPhase.saving => 'Saving Plog',
+              TrackPhase.cancelling => 'Discarding Plog',
+              _ => 'Starting Plog',
+            }),
           if ([TrackPhase.idle, TrackPhase.startError].contains(phase))
             PrimaryButton(
-              'Start or resume Plog',
+              recovering ? 'Resume Plog Session' : 'Start or resume Plog',
               onPressed: controller.startOrResume,
             ),
-          if (track != null && (ongoing || phase == TrackPhase.stopped))
+          if (track != null &&
+              (ongoing ||
+                  [
+                    TrackPhase.stopped,
+                    TrackPhase.saving,
+                    TrackPhase.saveError,
+                  ].contains(phase)))
             GarbagePhotos(
               track.id,
               key: photos,
               inlineAdd: !ongoing,
+              editing:
+                  phase != TrackPhase.saving && phase != TrackPhase.saveError,
+              uploads: view.uploads,
               onAvailable: (v) {
                 if (mounted && v != canAdd) setState(() => canAdd = v);
               },
               onSave: phase == TrackPhase.stopped ? save : null,
             ),
-          if (phase == TrackPhase.saveError)
+          if (ended && !saved)
+            const Text(
+              'Item and material estimates appear after photo analysis.',
+              style: AppText.caption,
+            ),
+          if (ended && !saved && linked != null)
+            Text(
+              '${linked.where((item) => item['selected'] == 1).length} linked litter sightings',
+            ),
+          if (phase == TrackPhase.saveError) ...[
             PrimaryButton('Retry save', onPressed: save),
-          if (phase == TrackPhase.completed)
+            TextButton(
+              onPressed: controller.editPhotos,
+              child: const Text('Edit photos'),
+            ),
+          ],
+          if (phase == TrackPhase.otherDevice)
+            PrimaryButton(
+              'Continue on this device',
+              onPressed: () async {
+                if (await confirmAction(
+                      context,
+                      'Continue this Plog on this device?',
+                      'Continue here',
+                    ) &&
+                    mounted) {
+                  await controller.takeOver();
+                }
+              },
+            ),
+          if (phase == TrackPhase.cancelPending)
+            PrimaryButton('Retry discard', onPressed: controller.cancel),
+          if (track != null &&
+              (ongoing ||
+                  phase == TrackPhase.stopped ||
+                  phase == TrackPhase.saveError))
+            TextButton(
+              onPressed: () async {
+                if (await confirmAction(
+                      context,
+                      'Discard this Plog and its photos?',
+                      'Discard Plog',
+                    ) &&
+                    mounted) {
+                  await controller.cancel();
+                }
+              },
+              child: const Text('Discard Plog'),
+            ),
+          if (saved) ...[
+            const SizedBox(height: AppSpace.lg),
             PrimaryButton(
               'View activity',
+              icon: Icons.history_rounded,
               onPressed: () =>
                   openPage(context, '${AppRoutes.activity}/${track!.id}'),
             ),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  openPage(context, '/community/write?plog=${track!.id}'),
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share cleanup'),
+            ),
+            TextButton(
+              onPressed: () => switchPage(context, AppRoutes.home),
+              child: const Text('Return Home'),
+            ),
+          ],
           if (phase == TrackPhase.conflict)
             TextButton(
               onPressed: () async {

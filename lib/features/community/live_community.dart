@@ -21,7 +21,7 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
   Widget build(BuildContext context) => AppPage(
     title: 'Community',
     root: true,
-    bottomNavigation: const BottomNavBar(caller: 'community'),
+    bottomNavigation: const BottomNavBar(),
     actions: [
       IconButton(
         tooltip: 'Refresh community',
@@ -84,7 +84,7 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
                       if ((d['items'] as List).isEmpty && cursor == null)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: Text(
+                          child: AppNotice(
                             tab == 1
                                 ? 'Your shared cleanups will appear here.'
                                 : 'No posts yet. Share a cleanup with the community.',
@@ -97,31 +97,94 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(post['author'], style: AppText.label),
-                                Text(
-                                  localDate(context, post['createdAt']),
-                                  style: AppText.caption,
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor:
+                                          context.colors.primaryContainer,
+                                      foregroundColor:
+                                          context.colors.onPrimaryContainer,
+                                      child: Text(
+                                        (post['author'] as String)
+                                                .trim()
+                                                .characters
+                                                .firstOrNull
+                                                ?.toUpperCase() ??
+                                            'P',
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpace.md),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            post['author'],
+                                            style: AppText.label,
+                                          ),
+                                          Text(
+                                            localDate(
+                                              context,
+                                              post['createdAt'],
+                                            ),
+                                            style: AppText.caption,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                if (post['plogId'] != null)
-                                  Text(
-                                    [
-                                      'Shared cleanup',
-                                      if (post['seconds']
-                                          case final int seconds)
-                                        formatWalkSummary(
-                                          seconds,
-                                          meters: post['meters'] as num?,
-                                        ),
-                                    ].join(' · '),
-                                    style: AppText.caption,
-                                  ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: AppSpace.md),
                                 Text(post['body']),
+                                if (post['plogId'] != null)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: AppSpace.sm,
+                                    ),
+                                    child: EcoCard(
+                                      color: context.colors.primaryContainer,
+                                      padding: const EdgeInsets.all(
+                                        AppSpace.md,
+                                      ),
+                                      onTap: post['mine'] == true
+                                          ? () => openPage(
+                                              context,
+                                              '${AppRoutes.activity}/${post['plogId']}',
+                                            )
+                                          : null,
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.directions_walk),
+                                          const SizedBox(width: AppSpace.sm),
+                                          Expanded(
+                                            child: Text(
+                                              [
+                                                'Shared cleanup',
+                                                if (post['seconds']
+                                                    case final int seconds)
+                                                  formatWalkSummary(
+                                                    seconds,
+                                                    meters:
+                                                        post['meters'] as num?,
+                                                  ),
+                                              ].join(' · '),
+                                              style: AppText.label,
+                                            ),
+                                          ),
+                                          if (post['mine'] == true)
+                                            const Icon(Icons.chevron_right),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 Wrap(
                                   spacing: 4,
                                   children: [
                                     FieldAction(
-                                      '${post['likes']} likes',
+                                      post['liked'] == true
+                                          ? 'Unlike · ${post['likes']}'
+                                          : 'Like · ${post['likes']}',
                                       () => writeField(
                                         ref,
                                         'PUT',
@@ -144,7 +207,7 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
                                         Icons.chat_bubble_outline,
                                       ),
                                       label: Text(
-                                        '${post['comments']} comments',
+                                        'Comment · ${post['comments']}',
                                       ),
                                     ),
                                     if (post['mine'] == true) ...[
@@ -174,7 +237,7 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
                                         }
                                       }),
                                     ] else
-                                      FieldAction('Report', () async {
+                                      FieldAction('Report post', () async {
                                         await writeField(
                                           ref,
                                           'PUT',

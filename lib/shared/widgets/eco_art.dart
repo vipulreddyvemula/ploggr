@@ -24,7 +24,7 @@ class PloggrLogo extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 letterSpacing: -3,
                 height: 1.3,
-                color: AppColors.forest,
+                color: context.colors.onPrimaryContainer,
               ),
             ),
             SizedBox(
@@ -42,13 +42,13 @@ class PloggrLogo extends StatelessWidget {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: AppColors.primary,
+                          color: context.colors.primary,
                           width: size * .055,
                         ),
                       ),
                       child: Icon(
                         Icons.public_rounded,
-                        color: AppColors.primary,
+                        color: context.colors.primary,
                         size: size * .39,
                       ),
                     ),
@@ -60,7 +60,7 @@ class PloggrLogo extends StatelessWidget {
                       angle: .25,
                       child: Icon(
                         Icons.eco,
-                        color: AppColors.primary,
+                        color: context.colors.primary,
                         size: size * .34,
                       ),
                     ),
@@ -76,7 +76,7 @@ class PloggrLogo extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 letterSpacing: -3,
                 height: 1.3,
-                color: AppColors.forest,
+                color: context.colors.onPrimaryContainer,
               ),
             ),
           ],

@@ -79,12 +79,18 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
               if (rows.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(18),
-                  child: Text(
+                  child: AppNotice(
                     events
                         ? (tab == 2
                               ? 'You haven’t joined an upcoming cleanup.'
                               : 'No upcoming cleanups yet.')
                         : 'No challenges in this period.',
+                    actionLabel: tab == 0
+                        ? null
+                        : events
+                        ? 'Browse upcoming cleanups'
+                        : 'Show active challenges',
+                    onAction: tab == 0 ? null : () => setState(() => tab = 0),
                   ),
                 ),
               for (final row in [
@@ -106,7 +112,16 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                           style: AppText.caption,
                         ),
                         if (events) ...[
-                          Text(row['place']),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.place_outlined),
+                            title: Text(row['place']),
+                            subtitle: Text(
+                              row['joined'] == true
+                                  ? 'You’re going'
+                                  : 'Open to join',
+                            ),
+                          ),
                           Text(
                             'Hosted by ${row['organizer']} · ${row['going']} going',
                             style: AppText.caption,
@@ -130,6 +145,7 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                             '${row['progress']} of ${row['goal']} completed Plogs',
                           ),
                           LinearProgressIndicator(
+                            semanticsLabel: 'Challenge progress',
                             value:
                                 ((row['progress'] as int) /
                                         (row['goal'] as int))
@@ -341,7 +357,14 @@ class LiveBadges extends StatelessWidget {
     child: FieldData(
       'badges',
       (rows) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          AppNotice(
+            '${(rows as List).where((badge) => badge['earned'] != null).length} of ${rows.length} badges earned',
+          ),
+          const SizedBox(height: AppSpace.md),
+          if (rows.isEmpty)
+            const AppNotice('Achievements will appear here when available.'),
           for (final b in rows)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -352,11 +375,25 @@ class LiveBadges extends StatelessWidget {
                     b['earned'] == null
                         ? Icons.lock_outline
                         : Icons.workspace_premium,
-                    color: AppColors.forest,
+                    color: context.colors.onPrimaryContainer,
                   ),
                   title: Text(b['name']),
-                  subtitle: Text(
-                    '${b['rule']}\n${b['earned'] == null ? "${b['progress']} of ${b['goal']}" : "Earned ${localDate(context, b['earned'])}"}',
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b['rule']),
+                      if (b['earned'] != null)
+                        Text('Earned ${localDate(context, b['earned'])}')
+                      else ...[
+                        Text('${b['progress']} of ${b['goal']}'),
+                        if ((b['goal'] as num) > 0)
+                          LinearProgressIndicator(
+                            value: ((b['progress'] as num) / (b['goal'] as num))
+                                .clamp(0, 1),
+                            semanticsLabel: 'Progress toward ${b['name']}',
+                          ),
+                      ],
+                    ],
                   ),
                 ),
               ),

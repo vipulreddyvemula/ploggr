@@ -49,13 +49,31 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(switch (data['state']) {
-                'queued' => 'Waiting for analysis',
-                'processing' => 'Analyzing your pickup photos',
-                'ready' => 'Analysis ready',
-                'review' => 'Needs review',
-                _ => 'Analysis unavailable',
-              }, style: AppText.heading),
+              AppNotice(
+                switch (data['state']) {
+                  'queued' => 'Waiting for analysis',
+                  'processing' => 'Analyzing your pickup photos',
+                  'ready' =>
+                    data['reviewed'] == true
+                        ? 'Analysis reviewed'
+                        : 'Analysis ready',
+                  'review' => 'Needs review',
+                  'failed' => 'Photo analysis failed',
+                  _ => 'Analysis unavailable for this Plog',
+                },
+                status: switch (data['state']) {
+                  'queued' || 'processing' => AppStatus.pending,
+                  'ready' => AppStatus.success,
+                  'review' => AppStatus.warning,
+                  'failed' => AppStatus.failure,
+                  _ => AppStatus.information,
+                },
+              ),
+              if (data['suspiciousEvidence'] == true &&
+                  data['reviewed'] != true)
+                const Text(
+                  'Similar photos were detected. A reviewer will check the evidence before points are counted.',
+                ),
               if (data['state'] == 'review')
                 const Text(
                   'Uncertain results are held out of rankings until reviewed.',
@@ -64,6 +82,17 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
                 FieldAction(
                   'Retry analysis',
                   () => writeField(ref, 'POST', '$path/retry', reload: [path]),
+                ),
+              if (items.isNotEmpty)
+                SectionTitle(
+                  data['reviewed'] == true
+                      ? 'Reviewed item counts'
+                      : 'AI estimates from photos',
+                ),
+              if (items.isNotEmpty)
+                const Text(
+                  'These findings describe what appears in the photos. Cleanup verification is shown separately.',
+                  style: AppText.caption,
                 ),
               for (final (index, i) in items.indexed)
                 ExpansionTile(
@@ -101,6 +130,9 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
                     key: PageStorageKey('impact-${widget.id}-${d['material']}'),
                     title: Text(
                       '${d['material']} · ${(d['avoidedKg'] as num).toStringAsFixed(3)} kg CO₂e',
+                    ),
+                    subtitle: Text(
+                      'Estimate based on ${d['massKg']} kg weighed',
                     ),
                     children: [
                       Text(

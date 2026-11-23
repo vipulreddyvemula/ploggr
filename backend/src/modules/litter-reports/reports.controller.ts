@@ -4,8 +4,10 @@ import {
   Delete,
   Get,
   Header,
+  Headers,
   HttpCode,
   Param,
+  Patch,
   ParseIntPipe,
   ParseUUIDPipe,
   Post,
@@ -46,14 +48,25 @@ export class ReportsController {
   }
   @Put(':id/observations/:observation')
   observe(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string,
-    @Param('observation', ParseUUIDPipe) observation: string, @Body() body: ObservationInput) {
-    return this.reports.observe(req.user.id,id,observation,body);
+    @Param('observation', ParseUUIDPipe) observation: string, @Body() body: ObservationInput, @Headers('x-plog-device') recorder?: string) {
+    return this.reports.observe(req.user.id,id,observation,body,recorder);
   }
   @Get(':id')
   @Header('Cache-Control', 'private, no-store')
   detail(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.reports.detail(req.user.id, id);
   }
+  @Get(':id/history')
+  @Header('Cache-Control', 'private, no-store')
+  history(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reports.history(req.user.id, id);
+  }
+
+  @Patch(':id')
+  edit(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() fields: SpotFields) {
+    return this.reports.edit(req.user.id, id, fields);
+  }
+
   @Get(':id/photos/:position')
   @Header('Cache-Control', 'private, no-store')
   @Header('X-Content-Type-Options', 'nosniff')
@@ -63,7 +76,7 @@ export class ReportsController {
   @Put(':id')
   @UseInterceptors(
     FilesInterceptor('photos', 6, {
-      limits: { files: 6, fields: 5, fileSize: 8 * 1024 * 1024, fieldSize: 2048 },
+      limits: { files: 6, fields: 8, fileSize: 8 * 1024 * 1024, fieldSize: 4096 },
     }),
   )
   publish(
@@ -79,13 +92,19 @@ export class ReportsController {
     @Req() req: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() fields: CollectionFields,
+    @Headers('x-plog-device') recorder?: string,
   ) {
-    return this.reports.collection(req.user.id, id, fields);
+    return this.reports.collection(req.user.id, id, fields, recorder);
   }
   @Delete(':id')
   @HttpCode(204)
   withdraw(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.reports.withdraw(req.user.id, id);
+  }
+  @Delete(':id/draft')
+  @HttpCode(204)
+  cancelDraft(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reports.cancelDraft(req.user.id, id);
   }
   @Post(':id/flags')
   @HttpCode(204)

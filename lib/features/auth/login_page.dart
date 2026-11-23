@@ -118,18 +118,18 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(width: 10),
                           _social(
                             'Apple',
-                            const Icon(
+                            Icon(
                               Icons.apple,
-                              color: AppColors.ink,
+                              color: context.colors.onSurface,
                               size: 27,
                             ),
                           ),
                           const SizedBox(width: 10),
                           _social(
                             'Phone',
-                            const Icon(
+                            Icon(
                               Icons.phone_rounded,
-                              color: AppColors.primary,
+                              color: context.colors.primary,
                               size: 25,
                             ),
                           ),
@@ -180,7 +180,7 @@ class _LoginPageState extends State<LoginPage> {
           'Social sign-in is not connected in this preview. Choose Explore the preview to look around.',
         ),
         style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
+          backgroundColor: context.colors.surface,
           padding: const EdgeInsets.all(12),
         ),
         child: icon,

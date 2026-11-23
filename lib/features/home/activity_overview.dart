@@ -16,6 +16,7 @@ final totalsProvider = FutureProvider.autoDispose((ref) async {
     count: result!['sessions'] as int,
     tracked: result['trackedSessions'] as int? ?? result['sessions'] as int,
     reports: result['reports'] as int? ?? 0,
+    verifiedCleanups: result['verifiedCleanups'] as int? ?? 0,
     meters: (result['distanceMeters'] as num).toDouble(),
   );
 }, retry: (_, _) => null);
@@ -45,7 +46,7 @@ class AccountStats extends ConsumerWidget {
     final totals = ref.watch(totalsProvider);
     final t = totals.value;
     final reportCount = t?.reports.toString() ?? '—';
-    final distance = t == null || (!profile && t.tracked == 0)
+    final distance = t == null || t.tracked == 0
         ? '—'
         : formatWalkDistance(profile ? t.meters : t.meters / t.tracked);
     Widget tile(
@@ -59,7 +60,7 @@ class AccountStats extends ConsumerWidget {
         value: value,
         label: label,
         icon: profile ? null : icon,
-        color: color ?? AppColors.primary,
+        color: color ?? context.colors.primary,
         onTap: () => openPage(context, route),
       ),
     );
@@ -87,10 +88,15 @@ class AccountStats extends ConsumerWidget {
               profile ? 'Distance' : 'Avg. tracked walk',
               Icons.directions_walk_rounded,
               AppRoutes.activity,
-              color: AppColors.gold,
+              color: context.goldIcon,
             ),
           ],
         ),
+        if (profile && t != null)
+          Text(
+            'Verified cleanups: ${t.verifiedCleanups}',
+            style: AppText.caption,
+          ),
         if (totals.isLoading)
           const LinearProgressIndicator(semanticsLabel: 'Loading activity'),
         if (totals.hasError)

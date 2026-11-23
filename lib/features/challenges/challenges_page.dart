@@ -53,8 +53,8 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                           Container(
                             width: 51,
                             height: 69,
-                            decoration: const BoxDecoration(
-                              color: AppColors.paleGreen,
+                            decoration: BoxDecoration(
+                              color: context.colors.primaryContainer,
                               borderRadius: AppRadius.small,
                             ),
                             child: Icon(
@@ -62,7 +62,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                   ? Icons.recycling_rounded
                                   : Icons.park_rounded,
                               size: 36,
-                              color: AppColors.primary,
+                              color: context.colors.primary,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -79,7 +79,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                               Text(
                                 challenges[i].description,
                                 style: AppText.caption.copyWith(
-                                  color: AppColors.ink,
+                                  color: context.colors.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 7),
@@ -106,8 +106,9 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                               challenges[i].goal)
                                           .clamp(0, 1),
                                   minHeight: 7,
-                                  backgroundColor: AppColors.paleGreen,
-                                  color: AppColors.leaf,
+                                  backgroundColor:
+                                      context.colors.primaryContainer,
+                                  color: context.colors.primary,
                                 ),
                               ),
                               const SizedBox(height: 5),
