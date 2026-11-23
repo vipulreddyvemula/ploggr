@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
@@ -116,7 +116,7 @@ export function fieldContract(instance: () => INestApplication) {
       .expect(r => expect(r.body.items.map((s: { id: string }) => s.id)).not.toContain(spot));
   });
 
-  it('saves a private, unpinned pickup then analyzes, reviews and scores it under an explicit policy', async () => {
+  it('analyzes a private pickup across multiple photos and keeps it outside rankings after review', async () => {
     const a = await account(),
       b = await account();
     const cfg = app().get(ConfigService);
@@ -133,6 +133,12 @@ export function fieldContract(instance: () => INestApplication) {
         .set(a.auth)
         .attach('photo', image, 'pickup.jpg')
         .expect(200);
+    const second = randomUUID();
+    const otherView = await sharp(randomBytes(16 * 16 * 3), {
+      raw: { width: 16, height: 16, channels: 3 },
+    }).png().toBuffer();
+    await http().put(path + '/evidence/' + second).set(a.auth)
+      .attach('photo', otherView, 'other-view.png').expect(200);
     const finish = { endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route: [] };
     await http()
       .post(path + '/finish')
@@ -156,11 +162,16 @@ export function fieldContract(instance: () => INestApplication) {
     const provider = jest.spyOn(global, 'fetch');
     const prioritize = () =>
       db().query("UPDATE plog_analysis SET next_run='2000-01-01' WHERE plog_id=$1", [id]);
+    const clock = jest.spyOn(Date, 'now');
     cfg.set('GEMINI_API_KEY', 'test-only');
     try {
       await prioritize();
-      provider.mockResolvedValueOnce(new Response('', { status: 503 }));
+      provider.mockResolvedValueOnce(new Response('', { status: 503 }))
+        .mockResolvedValueOnce(new Response('', { status: 503 }));
       await app().get(AnalysisWorker).processNext();
+      await http().get(path + '/analysis').set(a.auth).expect(200)
+        .expect(r => expect(r.body).toMatchObject({ state: 'queued', retryAt: expect.any(String) }));
+      clock.mockReturnValue(Date.now() + 120_000);
       await prioritize();
       provider.mockResolvedValueOnce(
         Response.json({
@@ -175,9 +186,11 @@ export function fieldContract(instance: () => INestApplication) {
                       items: [
                         {
                           label: 'bottle',
-                          material: 'Plastic',
+                          material: 'PET plastic',
+                          type: 'Bottle',
                           count: 2,
-                          photos: [0],
+                          weight: { estimateKg: 0.04, minKg: 0.03, maxKg: 0.06 },
+                          photos: [0, 1],
                           box: [0, 0, 100, 100],
                           certain: true,
                         },
@@ -191,9 +204,10 @@ export function fieldContract(instance: () => INestApplication) {
         }),
       );
       await app().get(AnalysisWorker).processNext();
-      const parts = JSON.parse(provider.mock.calls[1][1]!.body as string).contents[0].parts;
-      expect(parts.filter((p: Record<string, unknown>) => p.inlineData)).toHaveLength(1);
+      const parts = JSON.parse(provider.mock.calls[2][1]!.body as string).contents[0].parts;
+      expect(parts.filter((p: Record<string, unknown>) => p.inlineData)).toHaveLength(2);
     } finally {
+      clock.mockRestore();
       provider.mockRestore();
       cfg.set('GEMINI_API_KEY', '');
     }
@@ -202,17 +216,29 @@ export function fieldContract(instance: () => INestApplication) {
       .set(a.auth)
       .expect(200)
       .expect((r) =>
-        expect(r.body).toMatchObject({ state: 'ready', result: { items: [{ label: 'bottle', count: 2 }] } }),
+        expect(r.body).toMatchObject({
+          state: 'ready', model: 'test-vision', retryAt: null, result: { items: [{
+            label: 'bottle', count: 2, type: 'Bottle', weight: { estimateKg: 0.04 },
+            photoIds: expect.arrayContaining([photo, second]),
+            potentialImpact: { baseline: 'Landfill', alternative: 'Recycling', avoidedKg: expect.any(Number) },
+          }] },
+          reward: { status: 'ineligible', earnedPoints: 0 },
+        }),
       );
     await http()
       .get('/api/leaderboard')
       .set(a.auth)
       .expect(200)
-      .expect((r) => expect(r.body.rules).toBeNull());
+      .expect((r) => expect(r.body).toMatchObject({ rules: { version: 'm3-v1' }, mine: null }));
     await http()
       .post(path + '/analysis/review')
       .set(a.auth)
+      .send({ note: 'Please check the bottle count.' })
       .expect(201);
+    await http().get('/api/moderation/analysis').set(b.auth).expect(200)
+      .expect(r => expect(r.body).toContainEqual(expect.objectContaining({
+        id, reviewNote: 'Please check the bottle count.',
+      })));
     await http()
       .get('/api/moderation/analysis/' + id + '/photos/' + photo)
       .set(a.auth)
@@ -224,16 +250,23 @@ export function fieldContract(instance: () => INestApplication) {
     await http()
       .put('/api/moderation/analysis/' + id)
       .set(b.auth)
-      .send({ items: [{ label: 'bottle', material: 'Plastic', count: 2, photoIds: [photo] }] })
+      .send({ items: [{ label: 'bottle', material: 'PET plastic', type: 'Bottle', count: 2, photoIds: [second, photo] }] })
       .expect(200);
+    await http().get(path + '/analysis').set(a.auth).expect(200).expect(r => {
+      expect(r.body).toMatchObject({
+        reviewed: true, reported: false,
+        result: { items: [{ weight: { estimateKg: 0.04 }, potentialImpact: { version: 'EPA WARM v16' } }] },
+        reward: { status: 'ineligible', earnedPoints: 0 },
+      });
+    });
     await db().query(
-      "INSERT INTO disposal_factors VALUES('test','Plastic','landfill',2,'Test fixture','v1'),('test','Plastic','recycle',1,'Test fixture','v1')",
+      "INSERT INTO disposal_factors VALUES('test','PET plastic','landfill',2,'Test fixture','v1'),('test','PET plastic','recycle',1,'Test fixture','v1')",
     );
     await http()
       .put(path + '/disposal')
       .set(a.auth)
       .send({
-        material: 'Plastic',
+        material: 'PET plastic',
         region: 'test',
         massKg: 0.5,
         baseline: 'landfill',
@@ -242,18 +275,92 @@ export function fieldContract(instance: () => INestApplication) {
       })
       .expect(200)
       .expect((r) => expect(r.body.impacts[0].avoidedKg).toBe(0.5));
-    await db().query(`INSERT INTO impact_rules VALUES('fixture','{"Plastic":2}',2,true)`);
+    await http().get('/api/leaderboard').set(a.auth).expect(200)
+      .expect(r => expect(r.body.mine).toBeNull());
+  });
+
+  it('ranks one verified cleanup, holds it for review and excludes reused evidence', async () => {
+    const a = await account(), b = await account();
+    app().get(ConfigService).set('MODERATOR_IDS', b.id);
+    const image = () => sharp(randomBytes(16 * 16 * 3), { raw: { width: 16, height: 16, channels: 3 } }).png().toBuffer();
+    const pickup = await image();
+    const makeReport = async () => {
+      const id = randomUUID();
+      const path = '/api/litter-reports/' + id;
+      await http().put(path).set(b.auth).field('latitude', '19.09').field('longitude', '72.88')
+        .field('category', 'Glass').field('notes', 'Cleanup evidence').attach('photos', await image(), 'report.png').expect(200);
+      return path;
+    };
+    const finishCleanup = async (auth: typeof a.auth, report: string, bytes: Buffer) => {
+      const id = (await http().post('/api/plogs').set(auth).expect(201)).body.id;
+      const photoId = randomUUID(), path = '/api/plogs/' + id;
+      const capturedAt = new Date().toISOString();
+      await http().put(path + '/evidence/' + photoId).set(auth)
+        .field('capture', JSON.stringify({ source: 'camera', capturedAt,
+          gps: { latitude: 19.09, longitude: 72.88, accuracyMeters: 5, recordedAt: capturedAt },
+        })).attach('photo', bytes, 'pickup.png').expect(200);
+      const receipt = report + '/observations/' + randomUUID();
+      const claim = { plogId: id, photoId, outcome: 'cleaned' };
+      await http().put(receipt).set(auth).send(claim).expect(200);
+      await http().post(path + '/finish').set(auth).send({
+        endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route: [],
+      }).expect(200);
+      const verification = (await http().put(receipt).set(auth).send(claim).expect(200)).body.verification;
+      return { id, path, photoId, verification };
+    };
+    const verified = await finishCleanup(a.auth, await makeReport(), pickup);
+    expect(verified.verification).toBe('verified');
+    await http().get(verified.path + '/analysis').set(a.auth).expect(200)
+      .expect(r => expect(r.body.reward).toMatchObject({ status: 'pending', earnedPoints: 0 }));
+    const provider = jest.spyOn(global, 'fetch');
+    const cfg = app().get(ConfigService);
+    cfg.set('GEMINI_API_KEY', 'test-only');
     try {
-      for (const period of ['week', 'month', 'all'])
-        await http()
-          .get('/api/leaderboard')
-          .set(a.auth)
-          .query({ period })
-          .expect(200)
-          .expect((r) => expect(r.body.mine).toMatchObject({ rank: 1, score: 5, mine: true }));
+      await db().query("UPDATE plog_analysis SET next_run='2000-01-01' WHERE plog_id=$1", [verified.id]);
+      provider.mockResolvedValueOnce(Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ quality: 'clear', items: [{
+          label: 'glass jar', material: 'Glass', type: 'Jar', count: 3,
+          weight: { estimateKg: 0.9, minKg: 0.6, maxKg: 1.1 },
+          photos: [0], box: [0, 0, 500, 500], certain: true,
+        }] }) }] } }],
+      }));
+      await app().get(AnalysisWorker).processNext();
     } finally {
-      await db().query("DELETE FROM impact_rules WHERE version='fixture'");
+      provider.mockRestore();
+      cfg.set('GEMINI_API_KEY', '');
     }
+    const result = (await http().get(verified.path + '/analysis').set(a.auth).expect(200)).body;
+    expect(result.reward).toMatchObject({ status: 'earned', earnedPoints: 3.6 });
+    const assertScore = async (score: number | null) => {
+      for (const period of ['week', 'month', 'all']) {
+        const { body } = await http().get('/api/leaderboard').set(a.auth).query({ period }).expect(200);
+        if (score === null) expect(body.mine).toBeNull();
+        else expect(body.mine).toMatchObject({ rank: 1, score, mine: true });
+      }
+    };
+    await assertScore(3.6);
+    await http().post(verified.path + '/analysis/review').set(a.auth).expect(201);
+    await assertScore(null);
+    await http().get(verified.path + '/analysis').set(a.auth).expect(200)
+      .expect(r => expect(r.body.reward).toMatchObject({ status: 'pending', pendingPoints: 3.6 }));
+    await http().put('/api/moderation/analysis/' + verified.id).set(b.auth)
+      .send({ items: [{ label: 'glass jar', material: 'Glass', type: 'Jar', count: 3, photoIds: [verified.photoId] }] })
+      .expect(200);
+    await assertScore(3.6);
+    const reencoded = await sharp(pickup).withMetadata({ orientation: 1 }).png().toBuffer();
+    for (const [bytes, expectedVerification] of [[pickup, 'unverified'], [reencoded, 'verified']] as const) {
+      const repeated = await finishCleanup(a.auth, await makeReport(), bytes);
+      expect(repeated.verification).toBe(expectedVerification);
+      const repeatedResult = {
+        ...result.result,
+        items: result.result.items.map((item: Record<string, unknown>) => ({ ...item, photoIds: [repeated.photoId] })),
+      };
+      await db().query("UPDATE plog_analysis SET state='ready',reviewed=true,result=$2 WHERE plog_id=$1",
+        [repeated.id, JSON.stringify(repeatedResult)]);
+      await http().get(repeated.path + '/analysis').set(a.auth).expect(200)
+        .expect(r => expect(r.body.reward).toMatchObject({ status: 'ineligible', earnedPoints: 0 }));
+    }
+    await assertScore(3.6);
   });
 
   it('exchanges a PKCE authorization code and recovers a password with a single-use mailed code', async () => {

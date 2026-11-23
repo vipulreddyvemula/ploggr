@@ -1,3 +1,4 @@
+import { LitterAnalysis1795600000000 } from './migrations/1795600000000-LitterAnalysis';
 import { CorePlogIntegrity1795500000000 } from './migrations/1795500000000-CorePlogIntegrity';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,7 @@ describe('shared database configuration', () => {
       migrations: [
         VerifyPostgis1794873600000, CreateUsers1795018043320, CreateAuthSessions1795020000000, CreatePlogs1795171000000,
         CreateGarbageEvidence1795172900000, CreateLitterReports1795300000000, FieldExperience1795400000000, CorePlogIntegrity1795500000000,
+        LitterAnalysis1795600000000,
       ],
     });
   });

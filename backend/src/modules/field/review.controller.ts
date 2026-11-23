@@ -21,21 +21,31 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsOptional,
   IsString,
   IsUUID,
   Length,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { EvidenceStorage } from '../evidence/evidence-storage';
-import { materials } from './analysis.service';
+import { litterTypes, materials } from './litter-classification';
+
+function itemKey(item: ReviewedItem) {
+  return JSON.stringify([item.label.trim(), item.material, item.type ?? 'Other', item.count, [...new Set(item.photoIds)].sort()]);
+}
+
+
 class ReviewedItem {
   @IsString() @Length(1, 80) label!: string;
   @IsIn(materials) material!: string;
-  @IsInt() @Min(1) @Max(1000) count!: number;
+  @IsOptional() @IsIn(litterTypes) type?: string;
+  @ValidateIf((item: ReviewedItem) => item.count !== null)
+  @IsInt() @Min(1) @Max(1000) count!: number | null;
   @IsArray() @ArrayMaxSize(6) @IsUUID('4', { each: true }) photoIds!: string[];
 }
 class Decision {
@@ -65,7 +75,8 @@ export class ReviewController {
   @Get() async queue(@Req() req: AuthenticatedRequest) {
     this.authorize(req.user.id);
     return this.db.query(
-      "SELECT plog_id AS id,result FROM plog_analysis WHERE state='review' ORDER BY next_run LIMIT 50",
+      `SELECT plog_id AS id,result,review_note AS "reviewNote" FROM plog_analysis
+      WHERE state='review' ORDER BY (review_note IS NOT NULL) DESC,next_run LIMIT 50`,
     );
   }
   @Get(':id/photos') async photos(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
@@ -109,10 +120,37 @@ export class ReviewController {
       const valid = new Set(photos.map((p: { id: string }) => p.id));
       if (dto.items.some((i) => !i.photoIds.length || i.photoIds.some((p) => !valid.has(p))))
         throw new BadRequestException('Choose supporting pickup photos');
-      const items = dto.items.map((i) => ({ ...i, photoIds: [...new Set(i.photoIds)], certain: true }));
-      await tx.query("UPDATE plog_analysis SET result=$2,reviewed=true,state='ready' WHERE plog_id=$1", [
+      const previous = new Map<string, Record<string, unknown>>(
+        (job.result?.items ?? []).map((item: ReviewedItem & Record<string, unknown>) => [itemKey(item), item]),
+      );
+      const seen = new Set<string>();
+      const items = dto.items.map((item) => {
+        const key = itemKey(item);
+        if (seen.has(key)) throw new BadRequestException('Combine duplicate item groups');
+        seen.add(key);
+        const type = item.type ?? 'Other';
+        const certain = item.count !== null && item.material !== 'Unknown'
+          && type !== 'Unsorted waste' && type !== 'Unrecognized object';
+        const prior = previous.get(key);
+        return {
+          weight: prior?.weight ?? null,
+          potentialImpact: certain ? prior?.potentialImpact ?? null : null,
+          box: prior?.box,
+          label: item.label.trim(),
+          material: item.material,
+          type,
+          count: item.count,
+          photoIds: prior?.photoIds ?? [...new Set(item.photoIds)],
+          certain,
+        };
+      });
+      await tx.query("UPDATE plog_analysis SET result=$2,reviewed=true,state='ready',review_note=NULL WHERE plog_id=$1", [
         id,
-        JSON.stringify({ quality: items.length ? 'clear' : 'empty', items }),
+        JSON.stringify({
+          version: job.result?.version,
+          quality: !items.length ? 'empty' : items.every((i) => i.certain) ? 'clear' : 'unclear',
+          items,
+        }),
       ]);
     });
   }

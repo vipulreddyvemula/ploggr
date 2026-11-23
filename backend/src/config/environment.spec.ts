@@ -24,6 +24,17 @@ describe('environment configuration', () => {
       .toEqual({ NODE_ENV: 'production', HOST: '0.0.0.0', PORT: 8080, AUTH_SECRET: secret, AUTH_ACCESS_TTL_SECONDS: 900, ...database });
   });
 
+  it('parses ordered Gemini fallbacks and accepts an empty override', () => {
+    const env = { ...credentials, AUTH_SECRET: secret };
+    expect(validateEnvironment({
+      ...env, GEMINI_FALLBACK_MODELS: ' gemini-a, gemini-b,gemini-a ',
+    }).GEMINI_FALLBACK_MODELS).toEqual(['gemini-a', 'gemini-b']);
+    expect(validateEnvironment({ ...env, GEMINI_FALLBACK_MODELS: '' }).GEMINI_FALLBACK_MODELS).toEqual([]);
+    expect(() => validateEnvironment({
+      ...env, GEMINI_FALLBACK_MODELS: 'gemini-a,gemini-b,gemini-c',
+    })).toThrow('GEMINI_FALLBACK_MODELS');
+  });
+
   it.each(['', 'abc', '3000.5', '0', '-1', '65536', '3e3'])('rejects invalid PORT=%j', (PORT) => {
     expect(() => validateEnvironment({ PORT })).toThrow('PORT must be an integer');
   });

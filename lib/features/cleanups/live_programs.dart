@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:uuid/uuid.dart';
+import '../../routes/app_routes.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../community/field_data.dart';
 import '../spots/place_picker.dart';
@@ -361,6 +362,20 @@ class LiveBadges extends StatelessWidget {
         children: [
           AppNotice(
             '${(rows as List).where((badge) => badge['earned'] != null).length} of ${rows.length} badges earned',
+          ),
+          const SizedBox(height: AppSpace.md),
+          FieldData(
+            'leaderboard?period=all',
+            (data) => EcoCard(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.leaderboard_outlined),
+                title: Text("${data['mine']?['score'] ?? 0} cleanup points"),
+                subtitle: const Text('All time'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => openPage(context, AppRoutes.leaderboard),
+              ),
+            ),
           ),
           const SizedBox(height: AppSpace.md),
           if (rows.isEmpty)

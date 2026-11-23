@@ -86,7 +86,10 @@ class _BoardState extends State<LiveLeaderboard> {
                       child: Text(
                         rules == null
                             ? 'Scores will use identified materials, quantities and supported avoided-carbon estimates.'
-                            : 'Scoring version ${rules['version']}\n${(rules['material_points'] as Map).entries.map((e) => "${e.key} · ${e.value} points per item").join("\n")}\nAvoided emissions · ${rules['carbon_points_per_kg']} points/kg CO₂e.',
+                            : "Verified cleanup photos qualify for item points and a potential CO₂e bonus.\n"
+                                  "${rules['version'] == 'm3-v1' ? '1 point per identified item' : (rules['material_points'] as Map).entries.map((e) => "${e.key} · ${e.value} points per item").join("\n")}\n"
+                                  "${rules['carbon_points_per_kg']} points per kg CO₂e, up to ${rules['carbonPoints']} bonus points. "
+                                  "Up to ${rules['plogPoints']} points per Plog.",
                       ),
                     ),
                   ],

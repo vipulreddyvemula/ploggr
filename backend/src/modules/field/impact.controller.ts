@@ -12,10 +12,17 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsIn, IsNumber, IsString, Length, Max, Min } from 'class-validator';
+import { ConfigService } from '@nestjs/config';
+import { IsIn, IsNumber, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
-import { materials } from './analysis.service';
+import { analysisVersion } from './analysis.service';
+import { cleanupRewards, defaultRewardRules, rewardLimits } from './cleanup-rewards';
+import { litterTypes, materials } from './litter-classification';
+
+class AnalysisReport {
+  @IsOptional() @IsString() @MaxLength(500) note?: string;
+}
 
 class DisposalInput {
   @IsIn(materials) material!: string;
@@ -33,10 +40,19 @@ const carbon = `SELECT d.material,d.mass_kg AS "massKg",d.region,d.baseline,d.ac
 @Controller()
 @UseGuards(AuthGuard)
 export class ImpactController {
-  constructor(private readonly db: DataSource) {}
+  constructor(
+    private readonly db: DataSource,
+    private readonly config: ConfigService,
+  ) {}
+  private async rules() {
+    const [rules] = await this.db.query(
+      'SELECT version,material_points,carbon_points_per_kg FROM impact_rules WHERE active',
+    );
+    return rules ?? defaultRewardRules;
+  }
   private async owned(owner: string, id: string) {
     const [row] = await this.db.query(
-      `SELECT a.state,a.result,a.model,a.reviewed,a.suspicious_evidence AS "suspiciousEvidence" FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
+      `SELECT a.result FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
       WHERE p.user_id=$1 AND p.id=$2`,
       [owner, id],
     );
@@ -45,25 +61,61 @@ export class ImpactController {
   }
   @Get('plogs/:id/analysis')
   async analysis(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.owned(req.user.id, id);
-    const impacts = await this.db.query(carbon + ' WHERE d.plog_id=$1', [id]);
-    return { ...data, impacts };
+    const rules = await this.rules();
+    const [data] = await this.db.query(`WITH activities AS (
+      SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,
+        a.state,a.result,a.model,a.reviewed,a.suspicious_evidence,a.review_note,a.attempts,a.next_run
+      FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id WHERE p.id=$2 AND p.user_id=$1
+      AND p.status='completed'
+    ), ${cleanupRewards}
+    SELECT activity.state,activity.result,activity.model,activity.reviewed,
+      activity.suspicious_evidence AS "suspiciousEvidence",activity.review_note IS NOT NULL AS reported,points.score,points.verified,
+      CASE WHEN activity.state='queued' AND activity.attempts>0 THEN activity.next_run END AS "retryAt",
+      coalesce((SELECT jsonb_agg(k ORDER BY k.material) FROM (${carbon} WHERE d.plog_id=activity.id) k),'[]') AS impacts
+    FROM activities activity JOIN points ON points.id=activity.id`,
+    [req.user.id, id, JSON.stringify(rules.material_points), rules.carbon_points_per_kg]);
+    if (!data) throw new NotFoundException();
+    const { score, verified, ...analysis } = data;
+    const { state, reviewed, suspiciousEvidence } = analysis;
+    const awards = state === 'ready' && score > 0 && (!suspiciousEvidence || reviewed);
+    const pending = verified && ['queued', 'processing', 'review', 'failed'].includes(state);
+    return {
+      ...analysis,
+      configured: Boolean(this.config.get<string>('GEMINI_API_KEY')),
+      canUpdate: state === 'ready' && !reviewed && analysis.result?.version !== analysisVersion,
+      reward: {
+        status: awards ? 'earned' : pending ? 'pending' : 'ineligible',
+        earnedPoints: awards ? score : 0,
+        pendingPoints: pending && score > 0 ? score : null,
+      },
+    };
   }
   @Post('plogs/:id/analysis/retry')
   async retry(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     await this.owned(req.user.id, id);
     await this.db.query(
-      "UPDATE plog_analysis SET state='queued',attempts=0,next_run=now() WHERE plog_id=$1 AND state='failed'",
-      [id],
+      `UPDATE plog_analysis SET state='queued',attempts=0,next_run=now(),result=NULL,model=NULL
+      WHERE plog_id=$1 AND (state='failed' OR (state='ready' AND NOT reviewed
+        AND result->>'version' IS DISTINCT FROM $2))`,
+      [id, String(analysisVersion)],
     );
   }
   @Post('plogs/:id/analysis/review')
-  async review(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+  async review(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: AnalysisReport,
+  ) {
     await this.owned(req.user.id, id);
     await this.db.query(
-      "UPDATE plog_analysis SET state='review',reviewed=false WHERE plog_id=$1 AND state='ready'",
-      [id],
+      `UPDATE plog_analysis SET state='review',reviewed=false,review_note=$2,next_run=now()
+      WHERE plog_id=$1 AND state IN ('ready','review') AND review_note IS NULL`,
+      [id, input?.note?.trim() || 'The Plog owner reported an incorrect prediction.'],
     );
+  }
+  @Get('impact/classification')
+  classification() {
+    return { materials, types: litterTypes };
   }
   @Get('impact/factors')
   factors() {
@@ -78,7 +130,7 @@ export class ImpactController {
     @Body() input: DisposalInput,
   ) {
     const row = await this.owned(req.user.id, id);
-    if (!row.result?.items.some((i: { material: string }) => i.material === input.material))
+    if (!row.result?.items?.some((i: { material: string }) => i.material === input.material))
       throw new BadRequestException('Choose a detected material');
     const { material, region, baseline, actual, version, massKg } = input;
     const factors = await this.db.query(
@@ -97,46 +149,32 @@ export class ImpactController {
   @Get('leaderboard')
   async leaderboard(@Req() req: AuthenticatedRequest, @Query('period') period = 'week') {
     if (!['week', 'month', 'all'].includes(period)) throw new BadRequestException('Invalid period');
-    const [rules] = await this.db.query(
-      'SELECT version,material_points,carbon_points_per_kg FROM impact_rules WHERE active',
-    );
-    const [pending] = await this.db.query(
-      "SELECT count(*)::int AS n FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id WHERE p.user_id=$1 AND a.state<>'ready' AND ($2='all' OR p.ended_at >= (date_trunc(CASE WHEN $2='month' THEN 'month' ELSE 'week' END,now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))",
-      [req.user.id, period],
-    );
-    if (!rules) return { items: [], mine: null, pending: pending.n, rules: null };
-    const ranked = await this.db.query(
-      `WITH qualifying AS (
-      SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,a.result FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id WHERE a.state='ready' AND
-      ($2='all' OR p.ended_at >= (date_trunc(CASE WHEN $2='month' THEN 'month' ELSE 'week' END, now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))
-    ), detections AS (
-      SELECT q.id,q.user_id,obj->>'material' AS material,(obj->>'count')::int AS quantity,
-        NOT EXISTS (
-          SELECT 1 FROM jsonb_array_elements_text(obj->'photoIds') AS view(photo)
-          JOIN garbage_evidence e ON e.id=view.photo::uuid
-          WHERE EXISTS (SELECT 1 FROM garbage_evidence prior JOIN plogs p ON p.id=prior.plog_id
-            WHERE prior.sha256=e.sha256 AND prior.plog_id<>q.id AND p.status='completed'
-            AND (coalesce(p.completed_at,p.ended_at),p.id)<(q.accepted_at,q.id))
-          OR EXISTS (SELECT 1 FROM spot_observations o WHERE o.photo_id=e.id AND o.outcome='cleaned' AND NOT o.resolved)
-        ) AS eligible
-      FROM qualifying q CROSS JOIN LATERAL jsonb_array_elements(q.result->'items') obj
-    ), credit AS (
-      SELECT id,user_id,material,sum(quantity) FILTER (WHERE eligible) AS quantity,bool_and(eligible) AS whole_material
-      FROM detections GROUP BY id,user_id,material HAVING bool_or(eligible)
-    ), totals AS (
-      SELECT c.user_id,round(sum(c.quantity*coalesce(($3::jsonb->>c.material)::numeric,0) +
-        CASE WHEN whole_material THEN coalesce(k."avoidedKg",0)*$4::numeric ELSE 0 END)::numeric,2)::float8 AS score
-      FROM credit c LEFT JOIN (${carbon}) k ON k.plog_id=c.id AND k.material=c.material GROUP BY c.user_id
-    ), ranks AS (SELECT t.*,rank() OVER (ORDER BY score DESC)::int AS rank FROM totals t)
-    SELECT r.rank,r.score,coalesce(nullif(u.display_name,''),'Plogger '||left(u.id::text,6)) AS name,u.id=$1 AS mine
-    FROM ranks r JOIN users u ON u.id=r.user_id WHERE r.rank<=100 OR u.id=$1 ORDER BY r.rank,u.id`,
-      [req.user.id, period, JSON.stringify(rules.material_points), rules.carbon_points_per_kg],
-    );
+    const rules = await this.rules();
+    const cutoff = `($2='all' OR p.ended_at >=
+      (date_trunc(CASE WHEN $2='month' THEN 'month' ELSE 'week' END,now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))`;
+    const [[pending], ranked] = await Promise.all([
+      this.db.query(`SELECT count(*)::int AS n FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
+        WHERE p.user_id=$1 AND ${cutoff} AND a.state IN ('queued','processing','review') AND EXISTS (
+            SELECT 1 FROM spot_observations o WHERE o.plog_id=p.id AND o.verification='verified'
+              AND o.outcome='cleaned' AND o.resolved)`, [req.user.id, period]),
+      this.db.query(`WITH activities AS (
+        SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,a.result,a.state
+        FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id
+        WHERE p.status='completed' AND a.state='ready' AND (NOT a.suspicious_evidence OR a.reviewed) AND ${cutoff}
+      ), ${cleanupRewards}, totals AS (
+        SELECT user_id,round(sum(score)::numeric,2)::float8 AS score FROM points WHERE score>0 GROUP BY user_id
+      ), ranks AS (
+        SELECT t.*,rank() OVER (ORDER BY score DESC)::int AS rank FROM totals t
+      )
+      SELECT r.rank,r.score,coalesce(nullif(u.display_name,''),'Plogger '||left(u.id::text,6)) AS name,u.id=$1 AS mine
+      FROM ranks r JOIN users u ON u.id=r.user_id WHERE r.rank<=100 OR u.id=$1 ORDER BY r.rank,u.id`,
+      [req.user.id, period, JSON.stringify(rules.material_points), rules.carbon_points_per_kg]),
+    ]);
     return {
-      items: ranked.slice(0, 100),
+      items: ranked.filter((r: { rank: number }) => r.rank <= 100).slice(0, 100),
       mine: ranked.find((r: { mine: boolean }) => r.mine) ?? null,
       pending: pending.n,
-      rules,
+      rules: { ...rules, ...rewardLimits },
     };
   }
 }

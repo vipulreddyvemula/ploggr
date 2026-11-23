@@ -49,6 +49,7 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
     await npm('migration:revert:prod');
     await npm('migration:revert:prod');
     await npm('migration:revert:prod');
+    await npm('migration:revert:prod');
     const rolledBack = await npm('migration:show:prod', { capture: true });
     assert.match(rolledBack, /\[X\].*VerifyPostgis/);
     assert.match(rolledBack, /\[X\].*CreateUsers/);
@@ -73,6 +74,7 @@ export async function runDatabaseIntegration(signal, checkLiveStack) {
 
     assert.match(applied, /\[X\].*FieldExperience/);
     assert.match(applied, /\[X\].*CorePlogIntegrity/);
+    assert.match(applied, /\[X\].*LitterAnalysis/);
     for (const overrides of [{ DB_PASSWORD: 'incorrect_password' }, { DB_PORT: await unusedPort() }]) {
       const output = await exec(process.execPath, ['dist/main.js'], {
         env: { ...env, ...overrides }, capture: true, expectedExit: 1, timeout: 30_000,

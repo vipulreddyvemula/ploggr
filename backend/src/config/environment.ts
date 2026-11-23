@@ -46,6 +46,20 @@ export interface Environment extends DatabaseEnvironment {
   PORT: number;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GEMINI_FALLBACK_MODELS?: string[];
+}
+
+export const defaultGeminiFallbackModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+
+function parseGeminiFallbackModels(value: unknown): string[] | undefined {
+  if (value === undefined) return;
+  if (typeof value === 'string') {
+    const models = [...new Set(value.split(',').map((name) => name.trim()).filter(Boolean))];
+    if (models.length <= 2 && models.every((name) => /^[a-z0-9][a-z0-9.-]{0,127}$/i.test(name))) {
+      return models;
+    }
+  }
+  throw new Error('GEMINI_FALLBACK_MODELS must be a comma-separated list of up to two model IDs');
 }
 
 function parsePort(value: unknown, name: 'PORT' | 'DB_PORT', fallback: number): number {
@@ -99,6 +113,7 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     PORT: port,
     GEMINI_API_KEY: geminiApiKey,
     GEMINI_MODEL: geminiModel,
+    GEMINI_FALLBACK_MODELS: parseGeminiFallbackModels(config.GEMINI_FALLBACK_MODELS),
     ...database,
   };
 }

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { DataSource } from 'typeorm';
-import { materials } from '../modules/field/analysis.service';
+import { materials } from '../modules/field/litter-classification';
 import source from './data-source';
 
 type Factor = {
