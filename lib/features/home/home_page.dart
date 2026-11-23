@@ -11,6 +11,7 @@ import '../profile/profile_controller.dart';
 import '../community/field_data.dart';
 import '../spots/spot_api.dart';
 import 'activity_overview.dart';
+import '../progress/progress_panel.dart';
 import '../plogging/data/plog_drafts.dart';
 import '../plogging/activity_page.dart';
 
@@ -200,6 +201,7 @@ class HomePage extends ConsumerWidget {
                   ),
                 ],
                 if (live) ...[
+                  const ProgressSnapshot(),
                   const SectionTitle('Latest report'),
                   const _LatestReport(),
                   if (totals != null && totals.count > 0) const _RecentPlog(),

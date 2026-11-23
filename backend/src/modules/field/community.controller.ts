@@ -31,6 +31,8 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 
+import { GamificationService } from './gamification';
+
 const trimmed = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 class NameInput {
   @trimmed() @IsString() @Length(1, 50) name!: string;
@@ -66,6 +68,7 @@ export class CommunityController {
   constructor(
     private readonly db: DataSource,
     private readonly config: ConfigService,
+    private readonly gamification: GamificationService,
   ) {}
   private moderator(id: string) {
     return (this.config.get<string>('MODERATOR_IDS') ?? '')
@@ -223,13 +226,14 @@ export class CommunityController {
     );
   }
   @Get('challenges')
-  challenges(@Req() req: AuthenticatedRequest) {
-    return this.db.query(
+  async challenges(@Req() req: AuthenticatedRequest) {
+    const custom = await this.db.query(
       `SELECT c.id,c.title,c.goal,c.starts_at AS "startsAt",c.ends_at AS "endsAt",c.organizer=$1 AS mine,
       (SELECT count(*)::int FROM plogs p WHERE p.user_id=$1 AND p.status='completed' AND p.ended_at BETWEEN c.starts_at AND c.ends_at) AS progress
       FROM cleanup_challenges c ORDER BY c.ends_at DESC LIMIT 100`,
       [req.user.id],
     );
+    return [...custom,...await this.gamification.challenges(req.user.id)];
   }
   @Put('challenges/:id')
   async challenge(
@@ -248,46 +252,8 @@ export class CommunityController {
     return { id };
   }
   @Get('badges')
-  async badges(@Req() req: AuthenticatedRequest) {
-    const [row] = await this.db.query(
-      `SELECT
-      (SELECT ended_at FROM plogs WHERE user_id=$1 AND status='completed' ORDER BY ended_at LIMIT 1) AS first,
-      (SELECT ended_at FROM plogs WHERE user_id=$1 AND status='completed' ORDER BY ended_at OFFSET 4 LIMIT 1) AS fifth,
-      (SELECT min(created_at) FROM spot_observations WHERE resolved AND user_id=$1) AS cleanup,
-      (SELECT min(created_at) FROM community_posts WHERE author_id=$1 AND NOT hidden) AS shared,
-      (SELECT count(*)::int FROM plogs WHERE user_id=$1 AND status='completed') AS walks`,
-      [req.user.id],
-    );
-    return [
-      {
-        name: 'First Plog',
-        rule: 'Complete a Plog with a pickup photo.',
-        earned: row.first,
-        progress: Math.min(row.walks, 1),
-        goal: 1,
-      },
-      {
-        name: 'Five clean walks',
-        rule: 'Complete five Plogs.',
-        earned: row.fifth,
-        progress: Math.min(row.walks, 5),
-        goal: 5,
-      },
-      {
-        name: 'Spot cleaner',
-        rule: 'Clear a reported litter spot.',
-        earned: row.cleanup,
-        progress: Number(!!row.cleanup),
-        goal: 1,
-      },
-      {
-        name: 'Community voice',
-        rule: 'Share a community post.',
-        earned: row.shared,
-        progress: Number(!!row.shared),
-        goal: 1,
-      },
-    ];
+  badges(@Req() req: AuthenticatedRequest) {
+    return this.gamification.badges(req.user.id);
   }
   @Get('moderation')
   async moderation(@Req() req: AuthenticatedRequest) {

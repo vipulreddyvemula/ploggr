@@ -5,6 +5,7 @@ import {
 import { User } from '../users/user.entity';
 
 @Entity('plogs')
+@Index('plogs_completed_period', { synchronize: false })
 @Index('plogs_one_active_per_user', ['user'], { unique: true, where: "status = 'active'" })
 @Check('plogs_lifecycle_check', `(status = 'active' AND ended_at IS NULL) OR
   (status IN ('completed','cancelled','abandoned') AND ended_at IS NOT NULL AND ended_at >= started_at)`)

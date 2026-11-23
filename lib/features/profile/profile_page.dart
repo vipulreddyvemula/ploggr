@@ -14,7 +14,7 @@ import '../auth/logout.dart';
 import '../auth/session/session_controller.dart' show sessionControllerProvider;
 import '../litter/application/litter_controller.dart';
 import 'profile_controller.dart';
-import '../home/activity_overview.dart';
+import '../progress/progress_panel.dart';
 
 enum ProfileSection {
   activity(AppRoutes.activity, 'My Activity', Icons.work_history_outlined),
@@ -100,7 +100,7 @@ class ProfilePage extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           if (live)
-            const AccountStats(profile: true)
+            const ProgressPanel()
           else
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

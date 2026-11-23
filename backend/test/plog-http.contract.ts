@@ -28,6 +28,34 @@ export function plogHttpContract() {
         .set(auth).attach('photo', photo, 'evidence.png').expect(200);
     }
 
+    it('retries pickup removals before saving a replacement photo and finishing', async () => {
+      const http = request(app.getHttpServer());
+      const { body: account } = await http.post('/api/auth/signup')
+        .send({ email: randomUUID() + '@example.test', password: randomUUID() }).expect(201);
+      const auth = { Authorization: 'Bearer ' + account.accessToken };
+      const { body: plog } = await http.post('/api/plogs').set(auth).expect(201);
+      const path = '/api/plogs/' + plog.id;
+      const evidence = path + '/evidence/';
+      const localOnly = evidence + randomUUID();
+      await http.delete(localOnly).set(auth).expect(204);
+      await http.delete(localOnly).set(auth).expect(204);
+
+      const uploaded = await attachPhoto(plog.id, auth);
+      const db = app.get(DataSource);
+      const [{ storage_key: key }] = await db.query('SELECT storage_key FROM garbage_evidence WHERE id=$1', [uploaded.body.id]);
+      await http.delete(evidence + uploaded.body.id).set(auth).expect(204);
+      await http.delete(evidence + uploaded.body.id).set(auth).expect(204);
+      expect(await db.query('SELECT storage_key FROM evidence_deletion_queue WHERE storage_key=$1', [key]))
+        .toEqual([{ storage_key: key }]);
+      await http.get(evidence + uploaded.body.id).set(auth).expect(404);
+
+      const replacement = await attachPhoto(plog.id, auth);
+      await http.post(path + '/finish').set(auth).send({
+        endedAt: new Date().toISOString(), durationSeconds: 0, distanceMeters: 0, route: [],
+      }).expect(200);
+      await http.get(evidence + replacement.body.id).set(auth).expect(200);
+    });
+
     it('validates image content and limits concurrent reservations to six per owned Plog', async () => {
       const http = request(app.getHttpServer());
       const account = async () => (await http.post('/api/auth/signup').send({

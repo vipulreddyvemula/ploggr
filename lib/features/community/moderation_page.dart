@@ -208,6 +208,25 @@ class _ReviewState extends ConsumerState<_Review> {
                               : int.tryParse(v) ?? 0,
                         ),
                       ),
+                      TextFormField(
+                        initialValue:
+                            (widget.job['result']?['items'] as List? ?? [])
+                                .where((entry) => entry['label'] == i['label'])
+                                .firstOrNull?['weight']?['estimateKg']
+                                ?.toString(),
+                        decoration: const InputDecoration(
+                          labelText: 'Estimated group weight in kg',
+                          helperText: 'Clear the field to remove an estimate.',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (v) => setState(
+                          () => i['weightKg'] = v.trim().isEmpty
+                              ? null
+                              : double.tryParse(v) ?? 0,
+                        ),
+                      ),
                       Wrap(
                         children: [
                           for (final (n, p) in (photos as List).indexed)

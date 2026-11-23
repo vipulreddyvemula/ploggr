@@ -21,6 +21,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -33,6 +34,7 @@ import {
 import { DataSource } from 'typeorm';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { EvidenceStorage } from '../evidence/evidence-storage';
+import { potentialImpact } from './potential-impact';
 import { litterTypes, materials } from './litter-classification';
 
 function itemKey(item: ReviewedItem) {
@@ -46,6 +48,7 @@ class ReviewedItem {
   @IsOptional() @IsIn(litterTypes) type?: string;
   @ValidateIf((item: ReviewedItem) => item.count !== null)
   @IsInt() @Min(1) @Max(1000) count!: number | null;
+  @IsOptional() @IsNumber() @Min(0.001) @Max(10000) weightKg?: number | null;
   @IsArray() @ArrayMaxSize(6) @IsUUID('4', { each: true }) photoIds!: string[];
 }
 class Decision {
@@ -114,10 +117,10 @@ export class ReviewController {
       );
       if (!job) throw new ConflictException();
       const photos = await tx.query(
-        'SELECT id FROM garbage_evidence WHERE plog_id=$1 AND uploaded_at IS NOT NULL',
+        'SELECT id,sha256 FROM garbage_evidence WHERE plog_id=$1 AND uploaded_at IS NOT NULL',
         [id],
       );
-      const valid = new Set(photos.map((p: { id: string }) => p.id));
+      const valid = new Map(photos.map((p: { id: string; sha256: string }) => [p.id,p.sha256]));
       if (dto.items.some((i) => !i.photoIds.length || i.photoIds.some((p) => !valid.has(p))))
         throw new BadRequestException('Choose supporting pickup photos');
       const previous = new Map<string, Record<string, unknown>>(
@@ -126,15 +129,24 @@ export class ReviewController {
       const seen = new Set<string>();
       const items = dto.items.map((item) => {
         const key = itemKey(item);
-        if (seen.has(key)) throw new BadRequestException('Combine duplicate item groups');
-        seen.add(key);
         const type = item.type ?? 'Other';
+        for (const sha of new Set(item.photoIds.map((photo) => valid.get(photo)))) {
+          const group = JSON.stringify([item.material,type,sha]);
+          if (seen.has(group)) throw new BadRequestException('Combine matching groups supported by the same image');
+          seen.add(group);
+        }
         const certain = item.count !== null && item.material !== 'Unknown'
           && type !== 'Unsorted waste' && type !== 'Unrecognized object';
         const prior = previous.get(key);
+        const kg = item.weightKg;
+        const weight = kg === undefined ? prior?.weight ?? null : kg === null
+          ? null : { estimateKg: kg, minKg: kg, maxKg: kg };
+        const impact = kg === undefined ? prior?.potentialImpact ?? null
+          : potentialImpact(item.material, type, kg === null ? null : { estimateKg: kg, minKg: kg, maxKg: kg });
         return {
-          weight: prior?.weight ?? null,
-          potentialImpact: certain ? prior?.potentialImpact ?? null : null,
+          weight,
+          weightReviewed: kg === undefined ? prior?.weightReviewed === true : kg !== null,
+          potentialImpact: certain ? impact : null,
           box: prior?.box,
           label: item.label.trim(),
           material: item.material,

@@ -5,11 +5,12 @@ import { ReviewController } from './review.controller';
 import { CommunityController } from './community.controller';
 import { ImpactController } from './impact.controller';
 import { PlacesController } from './places.controller';
+import { GamificationController, GamificationService } from './gamification';
 import { AnalysisWorker } from './analysis.service';
 
 @Module({
   imports: [AuthModule, EvidenceModule],
-  controllers: [ReviewController, CommunityController, ImpactController, PlacesController],
-  providers: [AnalysisWorker],
+  controllers: [ReviewController, CommunityController, ImpactController, PlacesController, GamificationController],
+  providers: [AnalysisWorker, GamificationService],
 })
 export class FieldModule {}

@@ -3,9 +3,10 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { DataSource, EntityManager } from 'typeorm';
 import { parseCapture, parseMetadataField } from '../evidence/capture-metadata';
+import { lockSightingEvidence } from '../plogs/cleanup-verification';
 import { requireRecorder } from '../plogs/recording-device';
 import { EvidenceStorage } from '../evidence/evidence-storage';
-import { type PhotoUpload, validatePhoto } from '../evidence/evidence.service';
+import { type PhotoUpload, perceptualHash, validatePhoto } from '../evidence/evidence.service';
 import { CollectionFields, DiscoverQuery, MapQuery, SpotFields, ObservationInput } from './reports.dto';
 
 const visible = "r.collection_plog_id IS NULL AND r.status IN ('open','collected')";
@@ -168,8 +169,11 @@ export class ReportsService {
         .jpeg({ quality: 85 })
         .toBuffer());
     }
+    const evidence = await Promise.all(files.map(async ({ buffer }) =>
+      ({ sha: digest(buffer), hash: await perceptualHash(buffer) })));
     return this.db.transaction(async (manager) => {
       const activity = plogId ? await this.lockPlog(manager, owner, plogId, recorder) : null;
+      await lockSightingEvidence(manager, evidence);
       const [row] = await manager.query(
         'SELECT status FROM litter_reports WHERE id=$1 AND author_id=$2 AND upload_token=$3 FOR UPDATE',
         [id, owner, reservation.token]);
@@ -181,8 +185,8 @@ export class ReportsService {
         const key = 'evidence/reports/' + id + '/' + reservation.token + '/' + index + '.jpg';
         await this.storage.put(key, bytes, 'image/jpeg');
         await manager.query(
-          'INSERT INTO litter_report_photos(report_id,position,storage_key,capture,sha256) VALUES ($1,$2,$3,$4,$5)',
-          [id, index, key, captures?.[index] ?? null, digest(files[index].buffer)]);
+          'INSERT INTO litter_report_photos(report_id,position,storage_key,capture,sha256,perceptual_hash) VALUES ($1,$2,$3,$4,$5,$6)',
+          [id, index, key, captures?.[index] ?? null, evidence[index].sha, evidence[index].hash]);
       }
       const next = plogId ? 'pending_finish' : 'open';
       const [previous] = plogId ? [] : await manager.query(`

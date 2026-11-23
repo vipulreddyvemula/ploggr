@@ -71,7 +71,9 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
                           Text('Started ${date(plog.startedAt)}'),
                           Text('Finished ${date(plog.endedAt)}'),
                           if (plog.verifiedCleanups > 0)
-                            Text('Verified cleanups: ${plog.verifiedCleanups}'),
+                            Text(
+                              'Location-verified spot claims: ${plog.verifiedCleanups}',
+                            ),
                           if (plog.unverifiedCleanups > 0)
                             Text(
                               'Unverified cleanups: ${plog.unverifiedCleanups}',

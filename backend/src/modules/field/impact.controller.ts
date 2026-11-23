@@ -17,7 +17,8 @@ import { IsIn, IsNumber, IsOptional, IsString, Length, Max, MaxLength, Min } fro
 import { DataSource } from 'typeorm';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { analysisVersion } from './analysis.service';
-import { cleanupRewards, defaultRewardRules, rewardLimits } from './cleanup-rewards';
+import { activityFields, cleanupRewards, receiptBreakdown, rewardLimits } from './cleanup-rewards';
+import { GamificationService, officialChallenges } from './gamification';
 import { litterTypes, materials } from './litter-classification';
 
 class AnalysisReport {
@@ -43,13 +44,8 @@ export class ImpactController {
   constructor(
     private readonly db: DataSource,
     private readonly config: ConfigService,
+    private readonly gamification: GamificationService,
   ) {}
-  private async rules() {
-    const [rules] = await this.db.query(
-      'SELECT version,material_points,carbon_points_per_kg FROM impact_rules WHERE active',
-    );
-    return rules ?? defaultRewardRules;
-  }
   private async owned(owner: string, id: string) {
     const [row] = await this.db.query(
       `SELECT a.result FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
@@ -61,32 +57,39 @@ export class ImpactController {
   }
   @Get('plogs/:id/analysis')
   async analysis(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
-    const rules = await this.rules();
     const [data] = await this.db.query(`WITH activities AS (
-      SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,
-        a.state,a.result,a.model,a.reviewed,a.suspicious_evidence,a.review_note,a.attempts,a.next_run
-      FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id WHERE p.id=$2 AND p.user_id=$1
-      AND p.status='completed'
-    ), ${cleanupRewards}
-    SELECT activity.state,activity.result,activity.model,activity.reviewed,
-      activity.suspicious_evidence AS "suspiciousEvidence",activity.review_note IS NOT NULL AS reported,points.score,points.verified,
-      CASE WHEN activity.state='queued' AND activity.attempts>0 THEN activity.next_run END AS "retryAt",
-      coalesce((SELECT jsonb_agg(k ORDER BY k.material) FROM (${carbon} WHERE d.plog_id=activity.id) k),'[]') AS impacts
-    FROM activities activity JOIN points ON points.id=activity.id`,
-    [req.user.id, id, JSON.stringify(rules.material_points), rules.carbon_points_per_kg]);
+      SELECT ${activityFields} FROM plogs p WHERE p.user_id=$1 AND p.status='completed'
+        AND p.ended_at >= (SELECT date_trunc('week',ended_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+          FROM plogs WHERE id=$2 AND user_id=$1)
+        AND p.ended_at <= (SELECT ended_at FROM plogs WHERE id=$2 AND user_id=$1)
+    ), ${cleanupRewards}, ${officialChallenges}
+    SELECT job.state,job.result,job.model,job.reviewed,job.suspicious_evidence AS "suspiciousEvidence",
+      job.review_note IS NOT NULL AS reported,l.score::float8,l.eligible,l.reward_status AS "rewardStatus",
+      l.reward_policy AS policy,l.challenge_points::int AS "challengePoints",
+      coalesce((SELECT jsonb_agg(jsonb_build_object('title',title,'points',bonus) ORDER BY kind)
+        FROM challenge_awards c WHERE c.id=l.id),'[]') AS "challengeAwards",
+      ${receiptBreakdown} AS breakdown,saved.updated_at AS "receiptUpdatedAt",
+      CASE WHEN l.eligible THEN jsonb_build_object('estimatedKg',l.estimated_weight,'reviewedKg',l.reviewed_weight,'measuredKg',l.measured_weight,
+        'potentialCo2eKg',l.potential_savings,'weightMaterials',l.weight_materials,'materials',l.materials)
+      END AS impact,
+      CASE WHEN job.state='queued' AND job.attempts>0 THEN job.next_run END AS "retryAt",
+      coalesce((SELECT jsonb_agg(k ORDER BY k.material) FROM (${carbon} WHERE d.plog_id=l.id) k),'[]') AS impacts
+    FROM scored l JOIN plog_analysis job ON job.plog_id=l.id
+    LEFT JOIN plog_reward_receipts saved ON saved.plog_id=l.id WHERE l.id=$2`, [req.user.id,id]);
     if (!data) throw new NotFoundException();
-    const { score, verified, ...analysis } = data;
-    const { state, reviewed, suspiciousEvidence } = analysis;
-    const awards = state === 'ready' && score > 0 && (!suspiciousEvidence || reviewed);
-    const pending = verified && ['queued', 'processing', 'review', 'failed'].includes(state);
+    const { score, eligible, breakdown, policy, rewardStatus, ...analysis } = data;
+    const { state, reviewed } = analysis;
+    const pending = rewardStatus === 'pending';
     return {
       ...analysis,
       configured: Boolean(this.config.get<string>('GEMINI_API_KEY')),
       canUpdate: state === 'ready' && !reviewed && analysis.result?.version !== analysisVersion,
       reward: {
-        status: awards ? 'earned' : pending ? 'pending' : 'ineligible',
-        earnedPoints: awards ? score : 0,
-        pendingPoints: pending && score > 0 ? score : null,
+        status: rewardStatus,
+        earnedPoints: score,
+        pendingPoints: pending && breakdown.items > 0 ? Math.round((breakdown.items+breakdown.impact)*100)/100 : null,
+        breakdown: eligible ? breakdown : null,
+        rules: { ...policy, ...rewardLimits },
       },
     };
   }
@@ -148,33 +151,6 @@ export class ImpactController {
   }
   @Get('leaderboard')
   async leaderboard(@Req() req: AuthenticatedRequest, @Query('period') period = 'week') {
-    if (!['week', 'month', 'all'].includes(period)) throw new BadRequestException('Invalid period');
-    const rules = await this.rules();
-    const cutoff = `($2='all' OR p.ended_at >=
-      (date_trunc(CASE WHEN $2='month' THEN 'month' ELSE 'week' END,now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'))`;
-    const [[pending], ranked] = await Promise.all([
-      this.db.query(`SELECT count(*)::int AS n FROM plog_analysis a JOIN plogs p ON p.id=a.plog_id
-        WHERE p.user_id=$1 AND ${cutoff} AND a.state IN ('queued','processing','review') AND EXISTS (
-            SELECT 1 FROM spot_observations o WHERE o.plog_id=p.id AND o.verification='verified'
-              AND o.outcome='cleaned' AND o.resolved)`, [req.user.id, period]),
-      this.db.query(`WITH activities AS (
-        SELECT p.id,p.user_id,coalesce(p.completed_at,p.ended_at) AS accepted_at,a.result,a.state
-        FROM plogs p JOIN plog_analysis a ON a.plog_id=p.id
-        WHERE p.status='completed' AND a.state='ready' AND (NOT a.suspicious_evidence OR a.reviewed) AND ${cutoff}
-      ), ${cleanupRewards}, totals AS (
-        SELECT user_id,round(sum(score)::numeric,2)::float8 AS score FROM points WHERE score>0 GROUP BY user_id
-      ), ranks AS (
-        SELECT t.*,rank() OVER (ORDER BY score DESC)::int AS rank FROM totals t
-      )
-      SELECT r.rank,r.score,coalesce(nullif(u.display_name,''),'Plogger '||left(u.id::text,6)) AS name,u.id=$1 AS mine
-      FROM ranks r JOIN users u ON u.id=r.user_id WHERE r.rank<=100 OR u.id=$1 ORDER BY r.rank,u.id`,
-      [req.user.id, period, JSON.stringify(rules.material_points), rules.carbon_points_per_kg]),
-    ]);
-    return {
-      items: ranked.filter((r: { rank: number }) => r.rank <= 100).slice(0, 100),
-      mine: ranked.find((r: { mine: boolean }) => r.mine) ?? null,
-      pending: pending.n,
-      rules: { ...rules, ...rewardLimits },
-    };
+    return this.gamification.leaderboard(req.user.id,period);
   }
 }

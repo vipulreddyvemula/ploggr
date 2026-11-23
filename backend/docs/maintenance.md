@@ -443,7 +443,11 @@ All of these routes use the signed-in session. Object storage stays private.
 | `PUT litter-reports/:id/observations/:observation` | Apply an idempotent cleaned, remains or missing observation. A cleanup requires the caller’s uploaded photo. A row lock gives one resolution credit per spot. |
 | `GET plogs/:id/analysis`, `POST plogs/:id/analysis/retry`, `POST plogs/:id/analysis/review` | Inspect an owned activity, requeue a failed job, or request review of an analyzed result. Workers claim jobs with time-limited leases. |
 | `GET impact/factors`, `PUT plogs/:id/disposal` | Read published factors and save measured material mass and actual and baseline disposal pathways. |
+| `GET progress?period=week`, `PUT profile/goal` | Read period totals, charts, the current goal and streaks. Save a daily or weekly verified-cleanup target from 1 to 100. |
+| `GET challenges`, `GET badges` | Read official and community challenges, and achievement progress with unlock dates. |
 | `GET leaderboard?period=week` | Read community standings, the caller’s overall position, pending analysis and the effective policy. Month and all time use `month` and `all`. |
 | `GET moderation`, `GET moderation/analysis` | Review flagged posts and reports or uncertain detections. Two independent missing reports since the last sighting trigger review. Moderators may keep or hide content and correct grouped detections against the original pickup photos. |
 
 Operators publish factor sets and point weights with the versioned import command. [Impact configuration](../../docs/development/configuration.md#photo-analysis-ranking-and-account-services)
+
+Run `node tool/validate_gamification.mjs` from the project root with Docker and a Linux display. The test uses an isolated API, database and object store to exercise pending credit, approval, a personal goal, challenges, badges and revocation in Flutter.

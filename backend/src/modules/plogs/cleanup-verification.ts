@@ -4,10 +4,22 @@ export async function lockPlogEvidence(tx: EntityManager, plogId: string) {
   const keys: { value: string }[] = await tx.query(`
     SELECT 'photo:' || sha256 AS value FROM garbage_evidence WHERE plog_id=$1
     UNION
-    SELECT 'visual:' || left(perceptual_hash,4) AS value FROM garbage_evidence
-      WHERE plog_id=$1 AND perceptual_hash IS NOT NULL
+    SELECT 'visual:' || band AS value FROM garbage_evidence
+      CROSS JOIN LATERAL unnest(photo_hash_bands(perceptual_hash)) band WHERE plog_id=$1
     ORDER BY value
   `, [plogId]);
+  for (const { value } of keys) {
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [value]);
+  }
+}
+
+export async function lockSightingEvidence(tx: EntityManager, evidence: { sha: string; hash: string | null }[]) {
+  const keys: { value: string }[] = await tx.query(`
+    SELECT DISTINCT value FROM jsonb_to_recordset($1::jsonb) AS e(sha text, hash text)
+    CROSS JOIN LATERAL unnest(ARRAY['photo:'||sha] ||
+      ARRAY(SELECT 'visual:'||band FROM unnest(photo_hash_bands(hash)) band)) value
+    ORDER BY value
+  `, [JSON.stringify(evidence)]);
   for (const { value } of keys) {
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [value]);
   }
@@ -21,9 +33,9 @@ export async function finalizeObservations(tx: EntityManager, plogId: string, st
     'SELECT id,status FROM litter_reports WHERE id=ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE',
     [requested.map(row => row.report_id)]);
   const statuses = new Map(current.map(r => [r.id, r.status]));
-  const claims: { id: string; report_id: string; outcome: string; sha256: string; eligible: boolean }[] =
+  const claims: { id: string; report_id: string; outcome: string; sha256: string; perceptual_hash: string | null; eligible: boolean }[] =
     await tx.query(`
-      SELECT o.id,o.report_id,o.outcome,e.sha256,
+      SELECT o.id,o.report_id,o.outcome,e.sha256,e.perceptual_hash,
         coalesce(e.capture->>'source'='camera'
           AND (e.capture->>'capturedAt')::timestamptz BETWEEN $2::timestamptz - interval '2 seconds' AND $3::timestamptz + interval '1 second'
           AND (e.capture->>'capturedAt')::timestamptz >= r.created_at
@@ -34,7 +46,8 @@ export async function finalizeObservations(tx: EntityManager, plogId: string, st
             (e.capture->>'capturedAt')::timestamptz + interval '5 seconds'
           AND ST_DWithin(r.location, ST_SetSRID(ST_MakePoint((e.capture->'gps'->>'longitude')::float8,
             (e.capture->'gps'->>'latitude')::float8),4326)::geography,75)
-          AND NOT EXISTS (SELECT 1 FROM litter_report_photos f WHERE f.sha256=e.sha256)
+          AND NOT EXISTS (SELECT 1 FROM litter_report_photos f WHERE
+            images_match(f.sha256,f.perceptual_hash,e.sha256,e.perceptual_hash))
           AND e.uploaded_at IS NOT NULL, false) AS eligible
       FROM spot_observations o JOIN garbage_evidence e ON e.id=o.photo_id AND e.plog_id=$1
       JOIN litter_reports r ON r.id=o.report_id
@@ -44,9 +57,13 @@ export async function finalizeObservations(tx: EntityManager, plogId: string, st
     const status = statuses.get(claim.report_id);
     const [reused] = claim.eligible ? await tx.query(`
       SELECT 1 FROM garbage_evidence prior JOIN plogs p ON p.id=prior.plog_id
-      WHERE prior.sha256=$1 AND p.status='completed' AND p.id<>$2
-      UNION ALL SELECT 1 FROM spot_observations WHERE reward_sha256=$1 LIMIT 1
-    `, [claim.sha256, plogId]) : [];
+      WHERE p.status='completed' AND p.id<>$2 AND prior.uploaded_at IS NOT NULL
+        AND images_match(prior.sha256,prior.perceptual_hash,$1,$3)
+      UNION ALL
+      SELECT 1 FROM spot_observations o JOIN garbage_evidence e ON e.id=o.photo_id
+      WHERE o.reward_sha256 IS NOT NULL AND images_match(e.sha256,e.perceptual_hash,$1,$3)
+      LIMIT 1
+    `, [claim.sha256, plogId, claim.perceptual_hash]) : [];
     let verification = 'unverified';
     if (claim.eligible && !reused && status === 'open') {
       verification = 'verified';

@@ -5,6 +5,7 @@ import '../../routes/app_routes.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../community/field_data.dart';
 import '../spots/place_picker.dart';
+import '../progress/progress_panel.dart';
 import '../spots/spot_map.dart';
 
 class LivePrograms extends ConsumerStatefulWidget {
@@ -44,7 +45,7 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
           selected: tab,
           onChanged: (i) => setState(() => tab = i),
         ),
-        FieldData(resource, (data) {
+        RewardData(resource, (data) {
           final now = DateTime.now();
           final rows = (data as List).cast<Map>().where((r) {
             final start = DateTime.parse(r['startsAt']);
@@ -55,8 +56,8 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
             return tab == 1
                 ? start.isAfter(now)
                 : tab == 2
-                ? end.isBefore(now)
-                : !start.isAfter(now) && !end.isBefore(now);
+                ? !end.isAfter(now)
+                : !start.isAfter(now) && end.isAfter(now);
           }).toList();
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -95,8 +96,11 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                   ),
                 ),
               for (final row in [
+                ...rows.where((r) => r['official'] == true),
                 ...rows.where((r) => r['id'] == selected),
-                ...rows.where((r) => r['id'] != selected),
+                ...rows.where(
+                  (r) => r['id'] != selected && r['official'] != true,
+                ),
               ])
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
@@ -105,13 +109,19 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(row['title'], style: AppText.heading),
-                        Text(
-                          localDate(context, row['startsAt'], time: events) +
-                              (events
-                                  ? ''
-                                  : ' – ${localDate(context, row['endsAt'])}'),
-                          style: AppText.caption,
-                        ),
+                        if (row['official'] == true)
+                          Text(
+                            'Closes ${localDate(context, row['endsAt'], time: true)}',
+                            style: AppText.caption,
+                          )
+                        else
+                          Text(
+                            localDate(context, row['startsAt'], time: events) +
+                                (events
+                                    ? ''
+                                    : ' – ${localDate(context, row['endsAt'])}'),
+                            style: AppText.caption,
+                          ),
                         if (events) ...[
                           ListTile(
                             contentPadding: EdgeInsets.zero,
@@ -143,7 +153,7 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                         ] else ...[
                           const SizedBox(height: 8),
                           Text(
-                            '${row['progress']} of ${row['goal']} completed Plogs',
+                            '${row['progress']} of ${row['goal']} ${row['unit'] ?? 'completed Plogs'}',
                           ),
                           LinearProgressIndicator(
                             semanticsLabel: 'Challenge progress',
@@ -151,6 +161,15 @@ class _ProgramsState extends ConsumerState<LivePrograms> {
                                 ((row['progress'] as int) /
                                         (row['goal'] as int))
                                     .clamp(0, 1),
+                          ),
+                        ],
+                        if (row['official'] == true) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            row['completedAt'] != null
+                                ? "Completed · +${row['earnedPoints']} points earned"
+                                : "+${row['bonus']} points on completion",
+                            style: AppText.label,
                           ),
                         ],
                         if (row['mine'] == true)
@@ -355,7 +374,7 @@ class LiveBadges extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AppPage(
     title: 'My badges',
-    child: FieldData(
+    child: RewardData(
       'badges',
       (rows) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -364,13 +383,13 @@ class LiveBadges extends StatelessWidget {
             '${(rows as List).where((badge) => badge['earned'] != null).length} of ${rows.length} badges earned',
           ),
           const SizedBox(height: AppSpace.md),
-          FieldData(
-            'leaderboard?period=all',
+          RewardData(
+            'progress?period=all',
             (data) => EcoCard(
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.leaderboard_outlined),
-                title: Text("${data['mine']?['score'] ?? 0} cleanup points"),
+                title: Text("${pointsLabel(data['totals']['points'])} points"),
                 subtitle: const Text('All time'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => openPage(context, AppRoutes.leaderboard),
@@ -400,7 +419,9 @@ class LiveBadges extends StatelessWidget {
                       if (b['earned'] != null)
                         Text('Earned ${localDate(context, b['earned'])}')
                       else ...[
-                        Text('${b['progress']} of ${b['goal']}'),
+                        Text(
+                          "${b['status'] == 'in_progress' ? 'In progress' : 'Locked'} · ${pointsLabel(b['progress'])} of ${b['goal']}",
+                        ),
                         if ((b['goal'] as num) > 0)
                           LinearProgressIndicator(
                             value: ((b['progress'] as num) / (b['goal'] as num))

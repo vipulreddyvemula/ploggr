@@ -92,7 +92,13 @@ void main() {
             for (final period in ['week', 'month'])
               fieldData('leaderboard?period=$period').overrideWith(
                 (_) async => {
-                  'rules': null,
+                  'rules': {
+                    'version': 'm5-v1',
+                    'carbon_points_per_kg': 2,
+                    'carbonPoints': 10,
+                    'movementPoints': 5,
+                    'plogPoints': 100,
+                  },
                   'mine': null,
                   'pending': 0,
                   'items': [],
@@ -107,7 +113,7 @@ void main() {
       expect(find.text('Shared cleanup · 12 sec'), findsOneWidget);
       await press(tester, 'Leaderboard');
       expect(find.text('Unranked'), findsOneWidget);
-      await press(tester, 'How scoring works');
+      await press(tester, 'How points work');
       await press(tester, 'Month');
       expect(find.text('Unranked'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -133,6 +139,44 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          fieldData('progress?period=week').overrideWith(
+            (_) async => {
+              'totals': {
+                'points': 6.6,
+                'cleanupPoints': 3.6,
+                'challengePoints': 3,
+                'completedPlogs': 2,
+                'verifiedCleanups': 1,
+                'distanceMeters': 3000.0,
+                'activeSeconds': 3600,
+                'items': 3,
+                'estimatedKg': .9,
+                'measuredKg': 1.2,
+                'potentialCo2eKg': .3,
+                'weightMaterials': 2,
+                'materials': 2,
+              },
+              'goal': {
+                'target': 2,
+                'cadence': 'week',
+                'progress': 1,
+                'streak': 1,
+                'longestStreak': 2,
+                'endsAt': '2026-11-30T00:00:00Z',
+              },
+              'series': [],
+              'pending': 0,
+              'activeChallenges': [
+                {
+                  'title': 'Daily collection',
+                  'progress': 3,
+                  'goal': 5,
+                  'unit': 'accepted items',
+                  'bonus': 2,
+                },
+              ],
+            },
+          ),
           fieldData(
             'profile',
           ).overrideWith((_) async => {'name': 'Asha', 'moderator': false}),
@@ -153,13 +197,7 @@ void main() {
           ),
           sessionApiProvider.overrideWithValue(FakeApi()),
           totalsProvider.overrideWith(
-            (ref) async => (
-              count: 2,
-              meters: 3000.0,
-              reports: 1,
-              tracked: 2,
-              verifiedCleanups: 0,
-            ),
+            (ref) async => (count: 2, meters: 3000.0, reports: 1, tracked: 2),
           ),
           mySpotsProvider(
             null,
@@ -181,6 +219,13 @@ void main() {
     expect(find.text('3.00 km'), findsOneWidget);
     expect(find.text('1.50 km'), findsOneWidget);
     expect(find.text('Campus Clean-up'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Daily collection'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Weekly cleanup goal'), findsNothing);
+    expect(find.text('Daily cleanup goal'), findsNothing);
 
     await tester.scrollUntilVisible(
       find.text('Metal litter'),
@@ -200,8 +245,11 @@ void main() {
     await tester.pumpAndSettle();
     await press(tester, 'Profile');
     expect(find.text('a@example.test'), findsOneWidget);
-    expect(find.byType(StatTile), findsNWidgets(3));
-    expect(find.text('3.00 km'), findsOneWidget);
+    expect(find.text('6.6 points'), findsOneWidget);
+    expect(find.text('0.9 kg AI-estimated weight'), findsOneWidget);
+    expect(find.text('1.2 kg self-reported measured weight'), findsOneWidget);
+    expect(find.text('Current streak · 1 week'), findsOneWidget);
+    expect(find.text('Weekly cleanup goal'), findsOneWidget);
     expect(find.byType(PreviewNote), findsNothing);
     expect(tester.takeException(), isNull);
   });

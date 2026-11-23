@@ -16,7 +16,9 @@ export class PlogsController {
 
   @Get('summary')
   @Header('Cache-Control','private, no-store')
-  totals(@Req() req: AuthenticatedRequest) { return this.plogs.totals(req.user.id); }
+  totals(@Req() req: AuthenticatedRequest, @Query('include') include?: string) {
+    return this.plogs.totals(req.user.id, include === 'progress');
+  }
 
   @Get('active')
   @Header('Cache-Control', 'no-store')

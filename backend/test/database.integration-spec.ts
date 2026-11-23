@@ -1,3 +1,5 @@
+import { UnreportedPickupRewards1795800000000 } from '../src/database/migrations/1795800000000-UnreportedPickupRewards';
+import { Gamification1795700000000 } from '../src/database/migrations/1795700000000-Gamification';
 import { LitterAnalysis1795600000000 } from '../src/database/migrations/1795600000000-LitterAnalysis';
 import { FieldExperience1795400000000 } from '../src/database/migrations/1795400000000-FieldExperience';
 import { CorePlogIntegrity1795500000000 } from '../src/database/migrations/1795500000000-CorePlogIntegrity';
@@ -58,7 +60,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
       VerifyPostgis1794873600000.name,
       CreateUsers1795018043320.name,
       CreateAuthSessions1795020000000.name,
-      CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name,
+      CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name, Gamification1795700000000.name, UnreportedPickupRewards1795800000000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
     expect(await source.runMigrations()).toHaveLength(0);
@@ -73,9 +75,13 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
+    await source.undoLastMigration();
+    await source.undoLastMigration();
     expect(await source.query("SELECT to_regclass('public.garbage_evidence') AS evidence")).toEqual([{ evidence: null }]);
-    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name, Gamification1795700000000.name, UnreportedPickupRewards1795800000000.name]);
     expect(await plogs.existsBy({ id: track.id, user: { id: owner.id } })).toBe(true);
+    await source.undoLastMigration();
+    await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
@@ -85,8 +91,10 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     expect(await source.query(`SELECT to_regclass('public.plogs') AS plogs,
       to_regclass('public.plog_route_points') AS points`)).toEqual([{ plogs: null, points: null }]);
     expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
-    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name]);
+    expect((await source.runMigrations()).map(({ name }) => name)).toEqual([CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name, Gamification1795700000000.name, UnreportedPickupRewards1795800000000.name]);
     expect(await sessions.existsBy({ id: session.id, user: { id: owner.id } })).toBe(true);
+    await source.undoLastMigration();
+    await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
     await source.undoLastMigration();
@@ -104,7 +112,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
     expect((await checkDatabase(source)).postgis).toContain('POSTGIS=');
     expect(await source.showMigrations()).toBe(true);
     expect((await source.runMigrations()).map(({ name }) => name)).toEqual([
-      CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name, CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name,
+      CreateUsers1795018043320.name, CreateAuthSessions1795020000000.name, CreatePlogs1795171000000.name, CreateGarbageEvidence1795172900000.name, CreateLitterReports1795300000000.name, FieldExperience1795400000000.name, CorePlogIntegrity1795500000000.name, LitterAnalysis1795600000000.name, Gamification1795700000000.name, UnreportedPickupRewards1795800000000.name,
     ]);
     expect(await source.showMigrations()).toBe(false);
   });
@@ -120,7 +128,7 @@ describe('PostgreSQL / PostGIS (isolated Compose database)', () => {
         ) ORDER BY c.relname
     `);
     expect(tables.map(({ name }: { name: string }) => name)).toEqual([
-      'cleanup_challenges','cleanup_events','community_posts','disposal_factors','event_rsvps','external_identities','impact_rules','password_resets','plog_analysis','plog_disposal','post_comments','post_flags','post_reactions','spot_observations',
+      'cleanup_goals','gamification_season','plog_reward_receipts','cleanup_challenges','cleanup_events','community_posts','disposal_factors','event_rsvps','external_identities','impact_rules','password_resets','plog_analysis','plog_disposal','post_comments','post_flags','post_reactions','spot_observations',
       'auth_refresh_tokens', 'auth_sessions', 'evidence_deletion_queue', 'garbage_evidence', 'litter_report_draft_cancellations', 'litter_report_flags', 'litter_report_photos', 'litter_report_status_history', 'litter_reports', 'migrations', 'plog_pickups', 'plog_route_points', 'plogs', 'users',
     ].sort());
     expect((await source.driver.createSchemaBuilder().log()).upQueries).toEqual([]);

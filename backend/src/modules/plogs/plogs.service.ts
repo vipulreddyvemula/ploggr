@@ -5,6 +5,7 @@ import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { FinishPlogDto } from './plog.dto';
 import { finalizeObservations, lockPlogEvidence } from './cleanup-verification';
 import { validateRoute } from './route-validation';
+import { gamificationSummary } from '../field/gamification';
 import { Plog } from './plog.entity';
 
 function summary(plog: Plog, userId: string) {
@@ -35,7 +36,7 @@ export class PlogsService {
     return { plog: plog && summary(plog, userId) };
   }
 
-  async totals(owner: string) {
+  async totals(owner: string, includeProgress = false) {
     const [{ verifiedCleanups, ...totals }] = await this.source.query(`
       SELECT (SELECT count(*)::int FROM litter_reports WHERE author_id=$1 AND collection_plog_id IS NULL
         AND status IN ('open','collected')) AS reports,
@@ -45,7 +46,8 @@ export class PlogsService {
       count(*) FILTER (WHERE distance_meters>0 OR EXISTS(SELECT 1 FROM plog_route_points f WHERE f.plog_id=plogs.id))::int AS "trackedSessions",
       coalesce(sum(distance_meters),0)::float8 AS "distanceMeters"
       FROM plogs WHERE user_id=$1 AND status='completed'`, [owner]);
-    return { ...totals, ...(verifiedCleanups > 0 && { verifiedCleanups }) };
+    const [progress] = includeProgress ? await this.source.query(gamificationSummary, [owner]) : [];
+    return { ...totals, ...(verifiedCleanups > 0 && { verifiedCleanups }), ...progress };
   }
 
   async completed(userId: string, before?: string) {
@@ -213,13 +215,13 @@ export class PlogsService {
       Object.assign(plog, { segmentStarts: validated.breaks, status: 'completed', endedAt, completedAt: new Date(), finishFingerprint: fingerprint,
         durationSeconds: validated.duration, distanceMeters: meters });
       await repo.save(plog);
+      await manager.query('UPDATE plogs SET completed_at=clock_timestamp() WHERE id=$1', [id]);
       await manager.query(`
         INSERT INTO plog_analysis(plog_id,suspicious_evidence)
         SELECT $1::uuid, EXISTS(
           SELECT 1 FROM garbage_evidence photo
           JOIN garbage_evidence candidate ON candidate.id<>photo.id
-            AND left(candidate.perceptual_hash,4)=left(photo.perceptual_hash,4)
-            AND bit_count(('x'||candidate.perceptual_hash)::bit(64) # ('x'||photo.perceptual_hash)::bit(64)) <= 4
+            AND images_match(candidate.sha256,candidate.perceptual_hash,photo.sha256,photo.perceptual_hash)
           JOIN plogs other ON other.id=candidate.plog_id
           WHERE photo.plog_id=$1 AND candidate.uploaded_at IS NOT NULL
             AND (candidate.plog_id=$1 OR other.status='completed')

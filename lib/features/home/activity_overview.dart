@@ -16,7 +16,6 @@ final totalsProvider = FutureProvider.autoDispose((ref) async {
     count: result!['sessions'] as int,
     tracked: result['trackedSessions'] as int? ?? result['sessions'] as int,
     reports: result['reports'] as int? ?? 0,
-    verifiedCleanups: result['verifiedCleanups'] as int? ?? 0,
     meters: (result['distanceMeters'] as num).toDouble(),
   );
 }, retry: (_, _) => null);
@@ -38,8 +37,7 @@ String formatWalkSummary(int seconds, {num? meters}) {
 }
 
 class AccountStats extends ConsumerWidget {
-  const AccountStats({super.key, this.profile = false});
-  final bool profile;
+  const AccountStats({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,7 +46,7 @@ class AccountStats extends ConsumerWidget {
     final reportCount = t?.reports.toString() ?? '—';
     final distance = t == null || t.tracked == 0
         ? '—'
-        : formatWalkDistance(profile ? t.meters : t.meters / t.tracked);
+        : formatWalkDistance(t.meters / t.tracked);
     Widget tile(
       String value,
       String label,
@@ -59,7 +57,7 @@ class AccountStats extends ConsumerWidget {
       child: StatTile(
         value: value,
         label: label,
-        icon: profile ? null : icon,
+        icon: icon,
         color: color ?? context.colors.primary,
         onTap: () => openPage(context, route),
       ),
@@ -85,18 +83,13 @@ class AccountStats extends ConsumerWidget {
             const SizedBox(width: 8),
             tile(
               distance,
-              profile ? 'Distance' : 'Avg. tracked walk',
+              'Avg. tracked walk',
               Icons.directions_walk_rounded,
               AppRoutes.activity,
               color: context.goldIcon,
             ),
           ],
         ),
-        if (profile && t != null)
-          Text(
-            'Verified cleanups: ${t.verifiedCleanups}',
-            style: AppText.caption,
-          ),
         if (totals.isLoading)
           const LinearProgressIndicator(semanticsLabel: 'Loading activity'),
         if (totals.hasError)

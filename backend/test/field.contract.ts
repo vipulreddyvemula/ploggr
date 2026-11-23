@@ -249,7 +249,7 @@ export function fieldContract(instance: () => INestApplication) {
       .get('/api/leaderboard')
       .set(a.auth)
       .expect(200)
-      .expect((r) => expect(r.body).toMatchObject({ rules: { version: 'm3-v1' }, mine: null }));
+      .expect((r) => expect(r.body).toMatchObject({ rules: { version: 'm5-v1' }, mine: null }));
     await http()
       .post(path + '/analysis/review')
       .set(a.auth)
@@ -280,7 +280,7 @@ export function fieldContract(instance: () => INestApplication) {
       });
     });
     await db().query(
-      "INSERT INTO disposal_factors VALUES('test','PET plastic','landfill',2,'Test fixture','v1'),('test','PET plastic','recycle',1,'Test fixture','v1')",
+      "INSERT INTO disposal_factors(region,material,pathway,version,factor,source) VALUES('test','PET plastic','landfill','v1',2,'Test fixture'),('test','PET plastic','recycle','v1',1,'Test fixture')",
     );
     await http()
       .put(path + '/disposal')
@@ -332,6 +332,16 @@ export function fieldContract(instance: () => INestApplication) {
     expect(verified.verification).toBe('verified');
     await http().get(verified.path + '/analysis').set(a.auth).expect(200)
       .expect(r => expect(r.body.reward).toMatchObject({ status: 'pending', earnedPoints: 0 }));
+    const progress = (period = 'week') => http().get('/api/progress').set(a.auth).query({ period }).expect(200);
+    const challenges = () => http().get('/api/challenges').set(a.auth).expect(200);
+    const badges = () => http().get('/api/badges').set(a.auth).expect(200);
+    await http().get('/api/progress').expect(401);
+    await http().put('/api/profile/goal').set(a.auth).send({ cadence: 'week', target: 101 }).expect(400);
+    await http().put('/api/profile/goal').set(a.auth).send({ cadence: 'week', target: 2 }).expect(200)
+      .expect(r => expect(r.body.goal).toMatchObject({ target: 2, cadence: 'week', progress: 0 }));
+    await progress().expect(r => expect(r.body).toMatchObject({
+      pending: 1, goal: { streak: 0 }, totals: { completedPlogs: 1, verifiedCleanups: 0, points: 0 },
+    }));
     const provider = jest.spyOn(global, 'fetch');
     const cfg = app().get(ConfigService);
     cfg.set('GEMINI_API_KEY', 'test-only');
@@ -350,15 +360,64 @@ export function fieldContract(instance: () => INestApplication) {
       cfg.set('GEMINI_API_KEY', '');
     }
     const result = (await http().get(verified.path + '/analysis').set(a.auth).expect(200)).body;
-    expect(result.reward).toMatchObject({ status: 'earned', earnedPoints: 3.6 });
+    expect(result.reward).toMatchObject({
+      status: 'earned', earnedPoints: 3.6, breakdown: { items: 3, movement: 0, spots: 1 },
+    });
+    const savedReceipt = async () => (await db().query(
+      'SELECT state,points::float8,evidence_and_components,policy FROM plog_reward_receipts WHERE plog_id=$1',
+      [verified.id],
+    ))[0];
+    expect(await savedReceipt()).toMatchObject({
+      state: 'earned',points: 3.6,policy: { version: 'm5-v1' },
+      evidence_and_components: { photoIds: [verified.photoId],acceptedItems: 3 },
+    });
+    await http().get('/api/plogs/summary?include=progress').set(a.auth).expect(200)
+      .expect(r => expect(r.body.progress).toMatchObject({ points: 6.6,verifiedCleanups: 1 }));
+    expect(result.challengeAwards).toEqual([{ title: 'Daily cleanup', points: 3 }]);
+    expect(result.impact.estimatedKg).toBe(0.9);
+    expect(result.impact.measuredKg).toBeNull();
+    const active = (await challenges()).body.filter((c: { endsAt: string }) => Date.parse(c.endsAt) > Date.now());
+    expect(active).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Daily cleanup', progress: 1, earnedPoints: 3, completedAt: expect.any(String) }),
+      expect.objectContaining({ title: 'Daily collection', progress: 3, earnedPoints: 0 }),
+      expect.objectContaining({ title: 'Weekly consistency', progress: 1, earnedPoints: 0 }),
+    ]));
+    expect((await badges()).body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'First Plog', status: 'earned', earned: expect.any(String) }),
+      expect.objectContaining({ name: '100 points', status: 'in_progress', progress: 6.6 }),
+      expect.objectContaining({ name: 'Challenge starter', status: 'earned' }),
+    ]));
     const assertScore = async (score: number | null) => {
       for (const period of ['week', 'month', 'all']) {
         const { body } = await http().get('/api/leaderboard').set(a.auth).query({ period }).expect(200);
+        const stats = (await progress(period)).body;
+        expect(stats.totals.points).toBe(score ?? 0);
         if (score === null) expect(body.mine).toBeNull();
-        else expect(body.mine).toMatchObject({ rank: 1, score, mine: true });
+        else {
+          expect(body.mine).toMatchObject({ rank: 1, score, mine: true, impact: stats.totals });
+          const bucketPoints = stats.series.reduce((total: number, row: { totals: { points: number } }) =>
+            total + row.totals.points,0);
+          expect(bucketPoints).toBeCloseTo(score);
+        }
       }
     };
-    await assertScore(3.6);
+    await assertScore(6.6);
+    await progress().expect(r => expect(r.body.goal).toMatchObject({ progress: 1, streak: 1, longestStreak: 1 }));
+    await db().query(`INSERT INTO disposal_factors(region,material,pathway,version,factor,source) VALUES
+      ('Fixture','Glass','Landfill','m5-test',1,'https://example.test/landfill'),
+      ('Fixture','Glass','Recycling','m5-test',0.5,'https://example.test/recycling')`);
+    await http().put(verified.path+'/disposal').set(a.auth).send({
+      material: 'Glass',massKg: 2,region: 'Fixture',baseline: 'Landfill',actual: 'Recycling',version: 'm5-test',
+    }).expect(200).expect(r => expect(r.body.impact).toMatchObject({
+      estimatedKg: null,measuredKg: 2,potentialCo2eKg: 1,
+    }));
+    await assertScore(6.6);
+    await db().query(`INSERT INTO impact_rules VALUES ('new-policy','{"Glass":10}',0,true)`);
+    try {
+      await assertScore(6.6);
+    } finally {
+      await db().query("DELETE FROM impact_rules WHERE version='new-policy'");
+    }
     await http().post(verified.path + '/analysis/review').set(a.auth).expect(201);
     await assertScore(null);
     await http().get(verified.path + '/analysis').set(a.auth).expect(200)
@@ -366,10 +425,10 @@ export function fieldContract(instance: () => INestApplication) {
     await http().put('/api/moderation/analysis/' + verified.id).set(b.auth)
       .send({ items: [{ label: 'glass jar', material: 'Glass', type: 'Jar', count: 3, photoIds: [verified.photoId] }] })
       .expect(200);
-    await assertScore(3.6);
+    await assertScore(6.6);
     const reencoded = await sharp(pickup).withMetadata({ orientation: 1 }).png().toBuffer();
-    for (const [bytes, expectedVerification] of [[pickup, 'unverified'], [reencoded, 'verified']] as const) {
-      const repeated = await finishCleanup(a.auth, await makeReport(), bytes);
+    for (const [bytes, expectedVerification] of [[pickup, 'unverified'], [reencoded, 'unverified']] as const) {
+      const repeated = await finishCleanup(b.auth, await makeReport(), bytes);
       expect(repeated.verification).toBe(expectedVerification);
       const repeatedResult = {
         ...result.result,
@@ -377,10 +436,199 @@ export function fieldContract(instance: () => INestApplication) {
       };
       await db().query("UPDATE plog_analysis SET state='ready',reviewed=true,result=$2 WHERE plog_id=$1",
         [repeated.id, JSON.stringify(repeatedResult)]);
-      await http().get(repeated.path + '/analysis').set(a.auth).expect(200)
+      await http().get(repeated.path + '/analysis').set(b.auth).expect(200)
         .expect(r => expect(r.body.reward).toMatchObject({ status: 'ineligible', earnedPoints: 0 }));
     }
-    await assertScore(3.6);
+    await assertScore(6.6);
+    await db().query("UPDATE plog_analysis SET state='review' WHERE plog_id=$1", [verified.id]);
+    const decide = () => http().put('/api/moderation/analysis/' + verified.id).set(b.auth).send({
+      items: [{ label: 'glass jar', material: 'Glass', type: 'Jar', count: 5,
+        weightKg: 0.9, photoIds: [verified.photoId] }],
+    });
+    const decisions = await Promise.all([decide(),decide()]);
+    expect(decisions.map(r => r.status).sort()).toEqual([200,409]);
+    await assertScore(10.6);
+    expect(await savedReceipt()).toMatchObject({ state: 'earned',points: 5.6 });
+    expect((await challenges()).body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Daily collection', progress: 5, earnedPoints: 2 }),
+    ]));
+    await http().post(verified.path + '/analysis/review').set(a.auth).expect(201);
+    await http().put('/api/moderation/analysis/' + verified.id).set(b.auth).send({ items: [] }).expect(200);
+    await assertScore(null);
+    expect(await savedReceipt()).toMatchObject({ state: 'rejected',points: 0,evidence_and_components: null });
+    await progress().expect(r => expect(r.body).toMatchObject({
+      pending: 0, goal: { progress: 0, streak: 0, longestStreak: 0 },
+      totals: { verifiedCleanups: 0, items: 0, measuredKg: null, potentialCo2eKg: null },
+    }));
+    expect((await badges()).body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'First Plog', status: 'locked', earned: null }),
+      expect.objectContaining({ name: 'Challenge starter', status: 'locked' }),
+    ]));
+
+    // Place the already verified evidence at UTC period boundaries. Approval still happens now.
+    const [calendar] = await db().query(`
+      SELECT date_trunc('week',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS week,
+        date_trunc('month',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS month,
+        starts_at FROM gamification_season
+    `);
+    const weekStart = new Date(calendar.week).getTime();
+    const monthStart = new Date(calendar.month).getTime();
+    const dayMs = 86400000;
+    const monday = weekStart - 7*dayMs;
+    const historical = [monday,monday+1,monday+dayMs,monday+2*dayMs];
+    const approved = (photoId: string) => JSON.stringify({
+      quality: 'clear', items: [{ label: 'glass jar', material: 'Glass', type: 'Jar', certain: true,
+        count: 1, photoIds: [photoId], box: [1,1,100,100] }],
+    });
+    const place = async (plog: { id: string; photoId: string }, endedAt: number) => {
+      await db().query(`UPDATE plogs SET ended_at=$2,started_at=$2::timestamptz-interval '25 minutes',duration_seconds=1500
+        WHERE id=$1`, [plog.id,new Date(endedAt)]);
+      await db().query(`UPDATE plog_analysis SET result=$2,state='ready',reviewed=false WHERE plog_id=$1`,
+        [plog.id,approved(plog.photoId)]);
+    };
+    await db().query("UPDATE gamification_season SET starts_at=$1", [new Date(Math.min(monday,monthStart)-dayMs)]);
+    try {
+      for (const time of historical) {
+        const late = await finishCleanup(a.auth,await makeReport(),await image());
+        expect(late.verification).toBe('verified');
+        await place(late,time);
+      }
+      const weekly = (await challenges()).body.filter((r: { title: string; startsAt: string }) =>
+        r.title==='Weekly consistency' && Date.parse(r.startsAt)===monday);
+      expect(weekly).toEqual([expect.objectContaining({ progress: 3, earnedPoints: 10 })]);
+      await progress().expect(r => expect(r.body).toMatchObject({
+        totals: { points: 0 }, goal: { progress: 0, streak: 1, longestStreak: 1 },
+      }));
+      await progress('all').expect(r => expect(r.body.totals).toMatchObject({
+        verifiedCleanups: 4,cleanupPoints: 4,challengePoints: 19,points: 23,
+      }));
+      await http().put('/api/profile/goal').set(a.auth).send({ cadence: 'day',target: 1 }).expect(200)
+        .expect(r => expect(r.body.goal).toMatchObject({ streak: 0, longestStreak: 3 }));
+
+      const before = await finishCleanup(b.auth,await makeReport(),await image());
+      const at = await finishCleanup(b.auth,await makeReport(),await image());
+      await place(before,monthStart-1);
+      await place(at,monthStart);
+      // Timestamped fixes contribute only within continuous valid route segments.
+      await db().query(`INSERT INTO plog_route_points(plog_id,sequence,location,recorded_at,accuracy_meters)
+        SELECT $1,n,ST_SetSRID(ST_MakePoint(72.88+n*0.00025,19.09),4326)::geography,
+          $2::timestamptz-interval '22 minutes'+n*interval '25 seconds',5
+        FROM generate_series(0,50) n`, [at.id,new Date(monthStart)]);
+      await http().get(at.path+'/analysis').set(b.auth).expect(200)
+        .expect(r => expect(r.body.reward).toMatchObject({
+          earnedPoints: 2,breakdown: { movement: 1, movingSeconds: 1250 },
+        }));
+      await http().get('/api/progress?period=month').set(b.auth).expect(200)
+        .expect(r => expect(r.body.totals).toMatchObject({ verifiedCleanups: 1,points: 5 }));
+      await http().get('/api/progress?period=all').set(b.auth).expect(200)
+        .expect(r => expect(r.body.totals).toMatchObject({ verifiedCleanups: 2,points: 9 }));
+
+      const peer = await account();
+      const tie = await finishCleanup(peer.auth,await makeReport(),await image());
+      await place(tie,monthStart);
+      const peerResult = JSON.parse(approved(tie.photoId));
+      peerResult.items[0].count = 2;
+      await db().query('UPDATE plog_analysis SET result=$2 WHERE plog_id=$1', [tie.id,JSON.stringify(peerResult)]);
+      const standings = (await http().get('/api/leaderboard?period=month').set(b.auth).expect(200)).body;
+      const tied = standings.items.filter((row: { score: number }) => row.score === 5);
+      expect(tied).toHaveLength(2);
+      expect(tied.every((row: { rank: number }) => row.rank === standings.mine.rank)).toBe(true);
+
+      const outlier = { quality: 'clear',items: [{
+        material: 'Glass',type: 'Jar', count: 40, certain: true,photoIds: [at.photoId],
+      }] };
+      await db().query("UPDATE plog_analysis SET state='ready',result=$2 WHERE plog_id=$1",
+        [at.id,JSON.stringify(outlier)]);
+      await http().get(at.path+'/analysis').set(b.auth).expect(200)
+        .expect(r => expect(r.body).toMatchObject({ state: 'review',reward: { status: 'pending',earnedPoints: 0 } }));
+      await http().get('/api/leaderboard?period=month').set(b.auth).expect(200)
+        .expect(r => expect(r.body.mine).toBeNull());
+    } finally {
+      await db().query('UPDATE gamification_season SET starts_at=$1',[calendar.starts_at]);
+    }
+  });
+
+  it('awards and revokes XP for three bottles photographed without a map report', async () => {
+    const plogger = await account(), reviewer = await account();
+    const config = app().get(ConfigService);
+    config.set('MODERATOR_IDS', reviewer.id);
+    const image = () => sharp(randomBytes(16 * 16 * 3), {
+      raw: { width: 16, height: 16, channels: 3 },
+    }).png().toBuffer();
+    const bottles = await image();
+    const finish = async (auth: typeof plogger.auth, bytes: Buffer, source = 'camera', offset = 0, extraGallery = false) => {
+      const { body: { id } } = await http().post('/api/plogs').set(auth).expect(201);
+      const photoId = randomUUID(), path = '/api/plogs/' + id;
+      await http().put(path + '/evidence/' + photoId).set(auth)
+        .field('capture',JSON.stringify({ source,capturedAt: new Date(Date.now()+offset).toISOString() }))
+        .attach('photo',bytes,'pickup.png').expect(200);
+      const photoIds = [photoId];
+      if (extraGallery) {
+        const extra = randomUUID();
+        await http().put(path+'/evidence/'+extra).set(auth)
+          .field('capture',JSON.stringify({ source: 'gallery',capturedAt: new Date().toISOString() }))
+          .attach('photo',await image(),'gallery.png').expect(200);
+        photoIds.push(extra);
+      }
+      const result = { endedAt: new Date().toISOString(),durationSeconds: 0,distanceMeters: 0,route: [] };
+      await http().post(path+'/finish').set(auth).send(result).expect(200);
+      await http().post(path+'/finish').set(auth).send(result).expect(200);
+      return { id,path,photoId,photoIds };
+    };
+    const fresh = await finish(plogger.auth,bottles);
+    const prediction = { label: 'plastic bottles', material: 'Plastic', type: 'Bottle', count: 3,
+      weight: null,box: [0,0,500,500],certain: true };
+    await http().get(fresh.path+'/analysis').set(plogger.auth).expect(200)
+      .expect(r => expect(r.body.reward).toMatchObject({ status: 'pending',earnedPoints: 0 }));
+    const provider = jest.spyOn(global,'fetch');
+    config.set('GEMINI_API_KEY','test-only');
+    try {
+      await db().query("UPDATE plog_analysis SET next_run='2000-01-01' WHERE plog_id=$1",[fresh.id]);
+      provider.mockResolvedValueOnce(Response.json({ candidates: [{ content: { parts: [{
+        text: JSON.stringify({ quality: 'clear',items: [{ ...prediction,photos: [0] }] }),
+      }] } }] }));
+      await app().get(AnalysisWorker).processNext();
+    } finally {
+      provider.mockRestore();
+      config.set('GEMINI_API_KEY','');
+    }
+    await http().get(fresh.path+'/analysis').set(plogger.auth).expect(200).expect(r => {
+      expect(r.body.reward).toMatchObject({ status: 'earned',earnedPoints: 3,
+        breakdown: { acceptedItems: 3,spots: 0,verifiedCleanups: 1,reportIds: [],photoIds: [fresh.photoId] },
+      });
+      expect(r.body.challengeAwards).toEqual([{ title: 'Daily cleanup',points: 3 }]);
+    });
+    await http().get('/api/progress').set(plogger.auth).expect(200).expect(r =>
+      expect(r.body).toMatchObject({ totals: { verifiedCleanups: 1,items: 3,points: 6 },
+        goal: { progress: 1,streak: 1 },
+      }));
+    await http().get('/api/leaderboard').set(plogger.auth).expect(200).expect(r =>
+      expect(r.body.mine).toMatchObject({ score: 6 }));
+    await http().get('/api/badges').set(plogger.auth).expect(200).expect(r =>
+      expect(r.body).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'First Plog',status: 'earned' }),
+        expect.objectContaining({ name: 'Spot cleaner',status: 'locked' }),
+      ])));
+    expect((await db().query('SELECT points::int FROM plog_reward_receipts WHERE plog_id=$1',[fresh.id]))[0].points)
+      .toBe(3);
+
+    const excluded = [
+      [await finish(reviewer.auth,bottles),'ineligible'],
+      [await finish(reviewer.auth,await sharp(bottles).withMetadata({ orientation: 1 }).png().toBuffer()),'ineligible'],
+      [await finish(reviewer.auth,await image(),'gallery'),'ineligible'],
+      [await finish(reviewer.auth,await image(),'camera',-86400000),'ineligible'],
+      [await finish(reviewer.auth,await image(),'camera',0,true),'rejected'],
+    ] as const;
+    for (const [other,status] of excluded) {
+      await db().query("UPDATE plog_analysis SET state='ready',reviewed=true,result=$2 WHERE plog_id=$1",
+        [other.id,JSON.stringify({ quality: 'clear',items: [{ ...prediction,photoIds: other.photoIds }] })]);
+      await http().get(other.path+'/analysis').set(reviewer.auth).expect(200)
+        .expect(r => expect(r.body.reward).toMatchObject({ status,earnedPoints: 0 }));
+    }
+    await http().post(fresh.path+'/analysis/review').set(plogger.auth).expect(201);
+    await http().put('/api/moderation/analysis/'+fresh.id).set(reviewer.auth).send({ items: [] }).expect(200);
+    await http().get('/api/progress').set(plogger.auth).expect(200)
+      .expect(r => expect(r.body.totals).toMatchObject({ verifiedCleanups: 0,items: 0,points: 0 }));
   });
 
   it('exchanges a PKCE authorization code and recovers a password with a single-use mailed code', async () => {

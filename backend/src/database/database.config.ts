@@ -1,3 +1,5 @@
+import { UnreportedPickupRewards1795800000000 } from './migrations/1795800000000-UnreportedPickupRewards';
+import { Gamification1795700000000 } from './migrations/1795700000000-Gamification';
 import { LitterAnalysis1795600000000 } from './migrations/1795600000000-LitterAnalysis';
 import type { DataSourceOptions } from 'typeorm';
 import { validateDatabaseEnvironment, type DatabaseEnvironment } from '../config/environment';
@@ -39,7 +41,7 @@ export function createDatabaseOptions(env: DatabaseEnvironment): DataSourceOptio
     migrations: [
       VerifyPostgis1794873600000, CreateUsers1795018043320, CreateAuthSessions1795020000000, CreatePlogs1795171000000,
       CreateGarbageEvidence1795172900000, CreateLitterReports1795300000000, FieldExperience1795400000000, CorePlogIntegrity1795500000000,
-        LitterAnalysis1795600000000,
+        LitterAnalysis1795600000000, Gamification1795700000000, UnreportedPickupRewards1795800000000,
     ],
     migrationsTableName: 'migrations',
     logging: false,

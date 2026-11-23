@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../community/field_data.dart';
 import 'saved_photos.dart';
+import '../progress/progress_panel.dart';
 
 class AnalysisPanel extends ConsumerStatefulWidget {
   const AnalysisPanel(this.id, {super.key});
@@ -73,8 +74,12 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
       data: {'note': report},
       reload: [
         path,
-        for (final period in ['week', 'month', 'all'])
+        'badges',
+        'challenges',
+        for (final period in ['week', 'month', 'all']) ...[
           'leaderboard?period=$period',
+          'progress?period=$period',
+        ],
       ],
     );
   }
@@ -141,16 +146,35 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
               if (reward != null) ...[
                 const SectionTitle('Cleanup points'),
                 Text(switch (reward['status']) {
-                  'earned' => "${reward['earnedPoints']} points earned",
+                  'earned' =>
+                    "${pointsLabel(reward['earnedPoints'])} points earned",
                   'pending' when reward['pendingPoints'] != null =>
-                    "${reward['pendingPoints']} points pending",
+                    "${pointsLabel(reward['pendingPoints'])} points pending",
                   'pending' => 'Points pending analysis or review',
+                  'rejected' => 'Cleanup credit revoked',
                   _ => '0 points earned',
                 }, style: AppText.label),
+                if (reward['breakdown'] case final Map breakdown) ...[
+                  Text(
+                    "${pointsLabel(breakdown['items'])} litter · ${pointsLabel(breakdown['impact'])} impact · ${pointsLabel(breakdown['movement'])} movement",
+                    style: AppText.caption,
+                  ),
+                  for (final award in (data['challengeAwards'] as List? ?? []))
+                    Text(
+                      "+${award['points']} points · ${award['title']}",
+                      style: AppText.caption,
+                    ),
+                ],
+                if (reward['rules'] case final Map rules)
+                  PointsExplanation(rules),
                 if (reward['status'] == 'ineligible')
                   const Text(
-                    'Points require eligible detections supported by verified cleanup photos.',
+                    'Take a photo with the Plog camera while collecting litter to qualify for points. Evidence must pass photo analysis or review.',
                   ),
+              ],
+              if (data['impact'] case final Map impact) ...[
+                const SectionTitle('Impact credited to this Plog'),
+                ImpactTotals(impact),
               ],
               if (items.isEmpty && result?['quality'] == 'empty')
                 const Text('No litter detected.'),
@@ -168,7 +192,7 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
                 Text(
                   weights.isEmpty
                       ? 'Weight could not be estimated from these photos.'
-                      : "Estimated weight · ${_range(weights, 'estimateKg', 'kg')}"
+                      : "Photo-estimated weight · ${_range(weights, 'estimateKg', 'kg')}"
                             "${weights.length < items.length ? ' · ${weights.length} of ${items.length} groups' : ''}",
                 ),
                 const SectionTitle('Potential carbon savings'),
@@ -189,7 +213,7 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
                   data['reported'] != true)
                 FieldAction('Report incorrect results', reportPrediction),
               if (impacts.isNotEmpty)
-                const SectionTitle('Weighed disposal estimates'),
+                const SectionTitle('Potential savings using measured weight'),
               for (final d in impacts)
                 ExpansionTile(
                   key: PageStorageKey('impact-${widget.id}-${d['material']}'),
@@ -252,7 +276,7 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
         Text(
           weight == null
               ? 'Weight unavailable'
-              : "Estimated weight · ${_range([weight], 'estimateKg', 'kg')}",
+              : "${item['weightReviewed'] == true ? 'Reviewer' : 'AI'}-estimated weight · ${_range([weight], 'estimateKg', 'kg')}",
         ),
         if (impact != null) ...[
           Text(

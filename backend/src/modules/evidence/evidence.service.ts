@@ -81,12 +81,13 @@ export class EvidenceService {
       const plog = await this.lockPlog(manager, owner, plogId);
       if (plog.status !== 'active') throw new ConflictException('Photo selection is closed');
       requireRecorder(plog.recordingDevice, recorder);
-      const rows = await manager.query(
-        'DELETE FROM garbage_evidence WHERE id=$1 AND plog_id=$2 RETURNING storage_key', [id, plog.id]);
-      if (rows.length) {
-        await manager.query('INSERT INTO evidence_deletion_queue(storage_key) VALUES($1) ON CONFLICT DO NOTHING',
-          [rows[0].storage_key]);
-      }
+      await manager.query(`
+        WITH removed AS (
+          DELETE FROM garbage_evidence WHERE id=$1 AND plog_id=$2 RETURNING storage_key
+        )
+        INSERT INTO evidence_deletion_queue(storage_key)
+        SELECT storage_key FROM removed ON CONFLICT DO NOTHING
+      `, [id, plog.id]);
     });
   }
 
