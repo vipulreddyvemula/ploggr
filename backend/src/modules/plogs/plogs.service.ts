@@ -75,7 +75,7 @@ export class PlogsService {
   async detail(userId: string, id: string) {
     const record = await this.source.getRepository(Plog).findOneBy({ user: { id: userId }, id, status: 'completed' });
     if (!record) throw new NotFoundException();
-    const [route, [claims]] = await Promise.all([
+    const [route, [claims], cleanupLocations] = await Promise.all([
       this.readRoute(this.source.manager, id),
       this.source.query(`
         SELECT count(*) FILTER(WHERE resolved)::int AS verified,
@@ -83,9 +83,21 @@ export class PlogsService {
           count(*) FILTER(WHERE verification='already_collected')::int AS "alreadyCollected"
         FROM spot_observations WHERE plog_id=$1 AND outcome='cleaned'
       `, [id]),
+      this.source.query(`
+        SELECT r.id, r.category, r.place,
+          ST_Y(r.location::geometry) AS latitude, ST_X(r.location::geometry) AS longitude
+        FROM litter_reports r
+        WHERE r.status='collected' AND (
+          (r.collection_plog_id=$1 AND r.author_id=$2)
+          OR r.id IN (SELECT report_id FROM spot_observations
+            WHERE plog_id=$1 AND user_id=$2 AND outcome='cleaned' AND resolved)
+        )
+        ORDER BY r.created_at,r.id
+      `, [id, userId]),
     ]);
     const { alreadyCollected, ...verifiedClaims } = claims;
     return { ...summary(record, userId), segmentStarts: record.segmentStarts, route,
+      ...(cleanupLocations.length > 0 && { cleanupLocations }),
       ...(claims.verified || claims.unverified || alreadyCollected
         ? { cleanupClaims: { ...verifiedClaims, ...(alreadyCollected > 0 && { alreadyCollected }) } }
         : {}) };

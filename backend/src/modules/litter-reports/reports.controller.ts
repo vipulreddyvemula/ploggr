@@ -22,7 +22,7 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import type { PhotoUpload } from '../evidence/evidence.service';
-import { CollectionFields, MapQuery, ReportPageQuery, SpotFields, ObservationInput } from './reports.dto';
+import { CollectionFields, DiscoverQuery, MapQuery, ReportPageQuery, SpotFields, ObservationInput } from './reports.dto';
 import { ReportsService } from './reports.service';
 
 @Controller('litter-reports')
@@ -32,7 +32,7 @@ export class ReportsController {
 
   @Get()
   @Header('Cache-Control', 'private, no-store')
-  list(@Req() req: AuthenticatedRequest, @Query() query: MapQuery) {
+  list(@Req() req: AuthenticatedRequest, @Query() query: DiscoverQuery) {
     return this.reports.list(req.user.id, query);
   }
   @Get('mine')

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import 'data/completed_plog.dart';
+import 'data/location_source.dart';
 import 'saved_photos.dart';
 import '../spots/spot_map.dart';
 import 'data/plog_api.dart';
@@ -58,7 +59,6 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
                 onAction: () => ref.invalidate(_detail(id)),
               ),
               data: (plog) {
-                final route = plog.route!;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -83,20 +83,7 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
                         ],
                       ),
                     ),
-                    if (route.isNotEmpty)
-                      SpotMap(
-                        fitRoute: true,
-                        route: route,
-                        breaks: plog.breaks,
-                        focus: route.first,
-                        points: {'start': route.first, 'finish': route.last},
-                        height: 200,
-                      )
-                    else
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('No route was recorded for this Plog.'),
-                      ),
+                    _RecordedRoute(plog),
                     OutlinedButton.icon(
                       onPressed: () =>
                           openPage(context, '/community/write?plog=$id'),
@@ -198,6 +185,119 @@ class _ActivityState extends ConsumerState<PlogActivityPage> {
                 ),
         ],
       ),
+    );
+  }
+}
+
+class _RecordedRoute extends StatefulWidget {
+  const _RecordedRoute(this.plog);
+  final CompletedPlog plog;
+
+  @override
+  State<_RecordedRoute> createState() => _RecordedRouteState();
+}
+
+class _RecordedRouteState extends State<_RecordedRoute> {
+  String? selected;
+  RouteFix? focus;
+  int cameraKey = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final plog = widget.plog;
+    final route = plog.route ?? const <RouteFix>[];
+    final locations = plog.cleanupLocations;
+    final points = {
+      for (final location in locations)
+        'cleanup-${location.id}': location.point,
+      if (route.isNotEmpty)
+        if (route.first == route.last)
+          'start-finish': route.first
+        else ...{
+          'start': route.first,
+          'finish': route.last,
+        },
+    };
+    final selectedLocation = locations
+        .where((value) => 'cleanup-${value.id}' == selected)
+        .firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (points.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: AppRadius.card,
+            child: SpotMap(
+              fitRoute: focus == null,
+              route: route,
+              breaks: plog.breaks,
+              focus: focus ?? route.firstOrNull ?? locations.first.point,
+              points: points,
+              height: 220,
+              selected: selected,
+              cameraKey: cameraKey,
+              onSelect: (id) {
+                if (id.startsWith('cleanup-')) setState(() => selected = id);
+              },
+            ),
+          ),
+          if (supportsSpotMap)
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              children: [
+                if (route.isNotEmpty) ...[
+                  if (route.first == route.last)
+                    const Text('S/F · Start and finish')
+                  else ...[
+                    const Text('S · Start'),
+                    const Text('F · Finish'),
+                  ],
+                ],
+                if (locations.isNotEmpty) const Text('✓ · Cleanup'),
+                if (focus != null)
+                  TextButton(
+                    onPressed: () => setState(() {
+                      focus = null;
+                      selected = null;
+                      cameraKey++;
+                    }),
+                    child: const Text('Fit route'),
+                  ),
+              ],
+            ),
+        ],
+        if (route.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No route was recorded for this Plog.'),
+          ),
+        if (selectedLocation != null && supportsSpotMap)
+          Text(
+            selectedLocation.place.isEmpty
+                ? '${selectedLocation.category} cleanup'
+                : '${selectedLocation.category} cleanup · ${selectedLocation.place}',
+          ),
+        for (final location in locations)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.check_circle_outline),
+            title: Text('${location.category} cleanup'),
+            subtitle: Text(
+              location.place.isNotEmpty
+                  ? location.place
+                  : '${location.point.latitude.toStringAsFixed(5)}, ${location.point.longitude.toStringAsFixed(5)}',
+            ),
+            onTap: supportsSpotMap
+                ? () => setState(() {
+                    focus = location.point;
+                    selected = 'cleanup-${location.id}';
+                    cameraKey++;
+                  })
+                : null,
+          ),
+      ],
     );
   }
 }

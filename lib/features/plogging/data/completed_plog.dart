@@ -1,5 +1,12 @@
 import 'location_source.dart';
 
+typedef CleanupLocation = ({
+  String id,
+  String category,
+  String place,
+  RouteFix point,
+});
+
 class CompletedPlog {
   const CompletedPlog(
     this.id,
@@ -16,6 +23,7 @@ class CompletedPlog {
     this.pickupCount,
     this.photoCount,
     this.analysisState,
+    this.cleanupLocations = const [],
   ]);
   final String id;
   final DateTime startedAt, endedAt;
@@ -27,6 +35,7 @@ class CompletedPlog {
   final bool? hasRoute;
   final int? pickupCount, photoCount;
   final String? analysisState;
+  final List<CleanupLocation> cleanupLocations;
 
   factory CompletedPlog.parse(
     Object? value,
@@ -74,6 +83,22 @@ class CompletedPlog {
         value['pickupCount'] as int?,
         value['photoCount'] as int?,
         value['analysisState'] as String?,
+        [
+          for (final cleanup in (value['cleanupLocations'] as List? ?? []))
+            if (cleanup case {
+              'id': String id,
+              'category': String category,
+              'place': String place,
+              'latitude': num lat,
+              'longitude': num lon,
+            })
+              (
+                id: id,
+                category: category,
+                place: place,
+                point: (latitude: lat.toDouble(), longitude: lon.toDouble()),
+              ),
+        ],
       );
     }
     throw const FormatException('Invalid completed activity');

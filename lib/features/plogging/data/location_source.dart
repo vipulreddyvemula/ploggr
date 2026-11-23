@@ -135,6 +135,18 @@ class LocationSource {
     return _currentPosition();
   }
 
+  /// Map discovery can refresh in the background of the screen after consent.
+  Future<RouteFix?> currentIfPermitted() async {
+    final permission = await platform.checkPermission();
+    if ((permission != LocationPermission.always &&
+            permission != LocationPermission.whileInUse) ||
+        !await platform.isLocationServiceEnabled()) {
+      return null;
+    }
+    final position = await _currentPosition();
+    return (latitude: position.latitude, longitude: position.longitude);
+  }
+
   Future<Position> _currentPosition() => platform.getCurrentPosition(
     locationSettings: AndroidSettings(
       forceLocationManager: true,

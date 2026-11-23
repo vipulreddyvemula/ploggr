@@ -37,6 +37,17 @@ export function fieldContract(instance: () => INestApplication) {
       .attach('photos', image, 'spot.png')
       .expect(200);
     const bbox = { south: 19, west: 72, north: 20, east: 73 };
+    const discover = (filters: Record<string, string | number>) =>
+      http().get('/api/litter-reports').set(b.auth).query({ ...bbox, ...filters });
+    const hasSpot = (response: { body: { items: { id: string }[] } }) =>
+      response.body.items.some(item => item.id === spot);
+    await discover({ status: 'open', category: 'Glass', lat: 19.09, lon: 72.88,
+      radius: 1000, sort: 'nearest', ageDays: 7, limit: 1 }).expect(200)
+      .expect(r => expect(r.body.items).toEqual([expect.objectContaining({ id: spot, distance: 0 })]));
+    await discover({ category: 'Paper' }).expect(200).expect(r => expect(hasSpot(r)).toBe(false));
+    await discover({ lat: 19.09, lon: 72.99, radius: 1000 }).expect(200)
+      .expect(r => expect(hasSpot(r)).toBe(false));
+    await discover({ radius: 1000 }).expect(400);
     const clusters = await http().get('/api/litter-reports/clusters').set(b.auth).query(bbox).expect(200);
     expect(clusters.body).toContainEqual(expect.objectContaining({ id: spot, count: 1 }));
     expect(
@@ -58,6 +69,8 @@ export function fieldContract(instance: () => INestApplication) {
     await http().put(observation()).set(b.auth).send({ outcome: 'missing', gps: gps() })
       .expect(200).expect(r => expect(r.body.verification).toBe('verified'));
     await http().get(path).set(b.auth).expect(200).expect(r => expect(r.body.needsChecking).toBe(true));
+    await discover({ status: 'verification' }).expect(200).expect(r => expect(hasSpot(r)).toBe(true));
+    await discover({ status: 'open' }).expect(200).expect(r => expect(hasSpot(r)).toBe(false));
     await http().put(observation()).set(b.auth).send({ outcome: 'missing', gps: gps() }).expect(200);
     const moderation = async () =>
       (await http().get('/api/moderation').set(a.auth)).body.reports.map((s: { id: string }) => s.id);
@@ -110,10 +123,17 @@ export function fieldContract(instance: () => INestApplication) {
     expect(details.map(response => response.body.cleanupClaims)).toEqual(expect.arrayContaining([
       { verified: 1, unverified: 0 }, { verified: 0, unverified: 0, alreadyCollected: 1 },
     ]));
+    expect(details.find(r => r.body.cleanupClaims.verified === 1)?.body.cleanupLocations).toEqual([
+      { id: spot, category: 'Glass', place: 'Park gate', latitude: 19.09, longitude: 72.88 },
+    ]);
+    expect(details.find(r => r.body.cleanupClaims.alreadyCollected === 1)?.body.cleanupLocations).toBeUndefined();
+    await http().get('/api/plogs/' + aWalk.claim.plogId).set(b.auth).expect(404);
     const totals = await Promise.all([a.auth, b.auth].map(auth => http().get('/api/plogs/summary').set(auth).expect(200)));
     expect(totals.map(response => response.body.verifiedCleanups ?? 0).sort()).toEqual([0, 1]);
     await http().get('/api/litter-reports').set(b.auth).query(bbox).expect(200)
       .expect(r => expect(r.body.items.map((s: { id: string }) => s.id)).not.toContain(spot));
+    await discover({ status: 'collected', category: 'Glass' }).expect(200)
+      .expect(r => expect(hasSpot(r)).toBe(true));
   });
 
   it('analyzes a private pickup across multiple photos and keeps it outside rankings after review', async () => {

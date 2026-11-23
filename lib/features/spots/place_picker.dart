@@ -117,7 +117,12 @@ class _PlaceState extends ConsumerState<_PlacePage> {
 
   Future<void> lookup(String query, int version) async {
     try {
-      final found = await ref.read(spotApiProvider).places({'q': query});
+      final bias = center ?? gpsPoint ?? focus;
+      final found = await ref.read(spotApiProvider).places({
+        'q': query,
+        'lat': ?bias?.latitude,
+        'lon': ?bias?.longitude,
+      });
       if (mounted && version == request) {
         setState(() {
           results = found;
@@ -131,9 +136,32 @@ class _PlaceState extends ConsumerState<_PlacePage> {
       if (mounted && version == request) {
         setState(() {
           searching = false;
-          notice = 'Place search is unavailable. Tap the map to choose a spot.';
+          results = [];
+          notice =
+              'Place search is unavailable. Retry or choose a spot on the map.';
         });
       }
+    }
+  }
+
+  void searchPlaces(String value, {bool submit = false}) {
+    debounce?.cancel();
+    final term = value.trim();
+    final version = ++request;
+    setState(() {
+      interacted = true;
+      results = [];
+      notice = '';
+      searching = term.length >= 2;
+    });
+    if (!searching) return;
+    if (submit) {
+      unawaited(lookup(term, version));
+    } else {
+      debounce = Timer(
+        const Duration(milliseconds: 350),
+        () => lookup(term, version),
+      );
     }
   }
 
@@ -222,26 +250,13 @@ class _PlaceState extends ConsumerState<_PlacePage> {
             child: TextField(
               controller: search,
               enabled: !accepting,
+              textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
                 labelText: 'Search a park, street or landmark',
                 prefixIcon: Icon(Icons.search),
               ),
-              onChanged: (s) {
-                debounce?.cancel();
-                final version = ++request;
-                setState(() {
-                  interacted = true;
-                  results = [];
-                  notice = '';
-                  searching = s.trim().length >= 2;
-                });
-                if (searching) {
-                  debounce = Timer(
-                    const Duration(milliseconds: 350),
-                    () => lookup(s.trim(), version),
-                  );
-                }
-              },
+              onChanged: searchPlaces,
+              onSubmitted: (value) => searchPlaces(value, submit: true),
             ),
           ),
           if (searching)

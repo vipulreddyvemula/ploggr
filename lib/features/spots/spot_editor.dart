@@ -733,7 +733,7 @@ class _EditSpotState extends ConsumerState<EditSpotPage> {
       ref.invalidate(spotDetailProvider(widget.spot.id));
       ref.invalidate(mySpotsProvider);
       ref.invalidate(exploreProvider);
-      ref.invalidate(clusterProvider);
+      ref.invalidate(mapSpotsProvider);
       Navigator.pop(context);
     } catch (_) {
       if (mounted) {

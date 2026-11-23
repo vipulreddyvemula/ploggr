@@ -8,12 +8,17 @@ import {
   IsIn,
   IsLatitude,
   IsLongitude,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
+
+const categories = ['Plastic', 'Paper', 'Glass', 'Metal', 'E-waste', 'Other'];
 
 export class SpotFields {
   @IsOptional() @IsString() @MaxLength(4096) captures?: string;
@@ -23,7 +28,7 @@ export class SpotFields {
   @IsOptional() @IsString() @MaxLength(160) place?: string;
   @IsLatitude() latitude!: string;
   @IsLongitude() longitude!: string;
-  @IsIn(['Plastic', 'Paper', 'Glass', 'Metal', 'E-waste', 'Other']) category!: string;
+  @IsIn(categories) category!: string;
   @IsString() @MaxLength(250) notes!: string;
 }
 
@@ -42,6 +47,18 @@ export class MapQuery {
   @IsLatitude() north!: string;
   @IsLongitude() west!: string;
   @IsLongitude() east!: string;
+}
+
+export class DiscoverQuery extends MapQuery {
+  @IsOptional() @IsIn(categories) category?: string;
+  @IsOptional() @IsIn(['active', 'open', 'verification', 'collected'])
+  status?: 'active' | 'open' | 'verification' | 'collected';
+  @IsOptional() @IsIn(['nearest', 'newest']) sort?: 'nearest' | 'newest';
+  @IsOptional() @IsLatitude() lat?: string;
+  @IsOptional() @IsLongitude() lon?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50000) radius?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(365) ageDays?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) limit?: number;
 }
 
 export class ObservationInput {

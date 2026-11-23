@@ -1,26 +1,30 @@
-import '../../shared/widgets/evidence_review.dart';
-import 'dart:math' as math;
-import '../home/activity_overview.dart';
 import 'dart:async';
-import '../community/field_data.dart';
-import 'place_picker.dart';
-import 'observation_sync.dart';
-import 'report_sync.dart';
-import 'spot_draft.dart';
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' show LatLng, LatLngBounds;
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../routes/app_routes.dart';
-import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/bottom_navigation.dart';
+import '../../shared/widgets/evidence_review.dart';
+import '../../shared/widgets/ploggr_ui.dart';
+import '../community/field_data.dart';
+import '../home/activity_overview.dart';
 import '../plogging/application/active_track.dart';
 import '../plogging/data/location_source.dart';
 import '../plogging/data/plog_drafts.dart';
+import 'observation_sync.dart';
+import 'place_picker.dart';
+import 'report_sync.dart';
 import 'spot.dart';
 import 'spot_api.dart';
-import 'spot_map.dart';
+import 'spot_draft.dart';
 import 'spot_editor.dart';
+import 'spot_map.dart';
+import 'spot_map_layers.dart';
 
 class ExplorePage extends ConsumerStatefulWidget {
   const ExplorePage({
@@ -35,344 +39,787 @@ class ExplorePage extends ConsumerStatefulWidget {
   ConsumerState<ExplorePage> createState() => _ExploreState();
 }
 
-class _ExploreState extends ConsumerState<ExplorePage> {
-  MapViewport bounds = world;
-  int visibleCount = 10;
-  int tab = 0;
-  String? selected;
-  final cursors = <String?>[null];
-  RouteFix? location;
-  RouteFix? focus;
-  String area = 'Choose area';
-  int cameraKey = 0;
-  double zoom = 15;
-  Timer? timer;
-  bool interacted = false;
-  int locationRequest = 0;
+const _nearbyRadius = 5000;
+const _initialBounds = (south: 8.0, west: 65.0, north: 34.0, east: 93.0);
+const _defaultFilters = (
+  status: SpotMapStatus.active,
+  category: null,
+  radius: null,
+  ageDays: null,
+  nearest: false,
+);
 
-  void mapInteraction() {
-    interacted = true;
-    locationRequest++;
-  }
+class _ExploreState extends ConsumerState<ExplorePage> {
+  MapViewport bounds = _initialBounds;
+  MapViewport viewport = _initialBounds;
+  SpotFilters filters = _defaultFilters;
+  RouteFix? origin;
+  RouteFix? focus;
+  String? selected, notice;
+  String area = 'Choose area';
+  Set<String> overlapping = {};
+  int cameraKey = 0, locationRequest = 0, visibleCount = 10;
+  bool locating = false, initialized = false, heatmap = false;
+  bool listView = !supportsSpotMap, mapFailed = false;
+  Timer? viewportDebounce, refreshTimer, initialAreaTimer;
+  ({SpotQuery query, SpotResults page})? lastLoaded;
+  final selectedCard = GlobalKey();
+
+  SpotQuery get query => (
+    bounds: filters.radius == null ? bounds : world,
+    filters: filters,
+    origin: origin,
+  );
 
   @override
   void initState() {
     super.initState();
-    selected = widget.initialSpot;
-    WidgetsBinding.instance.addPostFrameCallback((_) => restore());
-    timer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted &&
-          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
-          ModalRoute.of(context)?.isCurrent == true) {
-        refreshMap();
-      }
-    });
+    restore();
+    if (!widget.own && !widget.community) {
+      initialAreaTimer = Timer(const Duration(milliseconds: 400), () {
+        if (mounted && !initialized) setState(() => initialized = true);
+      });
+      refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        if (!mounted ||
+            !initialized ||
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed ||
+            ModalRoute.isCurrentOf(context) != true) {
+          return;
+        }
+        final provider = mapSpotsProvider(query);
+        if (!ref.read(provider).isLoading) ref.invalidate(provider);
+      });
+    }
   }
 
   @override
-  void didUpdateWidget(ExplorePage old) {
-    super.didUpdateWidget(old);
-    if (old.initialSpot != widget.initialSpot && widget.initialSpot != null) {
-      selected = widget.initialSpot;
-      locationRequest++;
-      interacted = false;
+  void didUpdateWidget(ExplorePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSpot != widget.initialSpot &&
+        widget.initialSpot != null) {
       restore();
     }
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    viewportDebounce?.cancel();
+    refreshTimer?.cancel();
+    initialAreaTimer?.cancel();
     super.dispose();
   }
 
-  void refreshMap() {
-    ref.invalidate(exploreProvider(bounds));
-    ref.invalidate(clusterProvider(bounds));
-    if (selected != null) ref.invalidate(spotDetailProvider(selected!));
-    unawaited(
-      ref.read(observationSyncProvider).flush().catchError((Object _) {}),
-    );
+  void interact() {
+    locationRequest++;
+    if (!initialized) setState(() => initialized = true);
   }
 
   Future<void> restore() async {
-    if (widget.own) return;
-    try {
-      final id = widget.initialSpot;
-      final saved = id == null
-          ? await rememberedArea(ref.read(plogDraftsProvider))
-          : null;
-      final spot = id == null
-          ? null
-          : await ref.read(spotApiProvider).detail(id);
-      if (!mounted || interacted || widget.initialSpot != id) return;
-      if (saved != null || spot != null) {
+    if (widget.own || widget.community) return;
+    final version = ++locationRequest;
+    final id = widget.initialSpot;
+    final source = ref.read(locationSourceProvider);
+    if (id != null) {
+      try {
+        final spot = await ref.read(spotApiProvider).detail(id);
+        if (!mounted || version != locationRequest) return;
         showArea((
-          point: spot?.point ?? saved!.point,
-          name: spot?.place ?? saved!.name,
-        ));
-      } else {
-        final cached = await ref.read(locationSourceProvider).cachedPoint();
-        if (mounted &&
-            !interacted &&
-            widget.initialSpot == id &&
-            cached != null) {
-          showArea((point: cached, name: 'Last known area'));
-        }
+          point: spot.point,
+          name: spot.place.isEmpty ? 'Report area' : spot.place,
+        ), report: spot);
+        return;
+      } catch (_) {
+        if (!mounted || version != locationRequest) return;
+        setState(() => notice = 'This report is unavailable.');
       }
-    } catch (_) {}
+    }
+
+    RouteFix? cached;
+    try {
+      cached = await source.cachedPoint();
+      if (!mounted || version != locationRequest) return;
+      if (cached != null) {
+        showArea((point: cached, name: 'Last known area'), keepNotice: true);
+      } else {
+        final saved = await rememberedArea(ref.read(plogDraftsProvider));
+        if (!mounted || version != locationRequest) return;
+        if (saved != null) showArea(saved, keepNotice: true);
+      }
+    } catch (_) {
+      // Discovery can still use a searched area or the map viewport.
+    }
+    if (!mounted || version != locationRequest) return;
+    setState(() => initialized = true);
+
+    try {
+      final current = await source.currentIfPermitted();
+      if (mounted && version == locationRequest && current != null) {
+        showArea((point: current, name: 'Near me'), keepNotice: true);
+      }
+    } catch (_) {
+      // Keep showing the last known or chosen area while a fresh fix is unavailable.
+    }
   }
 
-  void showArea(ChosenPlace p) {
-    final lat = p.point.latitude, lon = p.point.longitude;
+  void showArea(ChosenPlace place, {Spot? report, bool keepNotice = false}) {
+    viewportDebounce?.cancel();
     setState(() {
-      focus = p.point;
-      area = p.name.isEmpty ? 'Pinned area' : p.name;
-      cameraKey++;
-      bounds = (
-        south: (lat - .04).clamp(-90, 90).toDouble(),
-        north: (lat + .04).clamp(-90, 90).toDouble(),
-        west: (lon - .04).clamp(-180, 180).toDouble(),
-        east: (lon + .04).clamp(-180, 180).toDouble(),
+      initialized = true;
+      if (!keepNotice) notice = null;
+      origin = focus = place.point;
+      area = place.name;
+      selected = report?.id;
+      overlapping = {};
+      filters = (
+        status: report?.mapStatus == SpotMapStatus.collected
+            ? SpotMapStatus.collected
+            : report == null
+            ? filters.status
+            : SpotMapStatus.active,
+        category: report == null ? filters.category : null,
+        radius: filters.radius ?? _nearbyRadius,
+        ageDays: report == null ? filters.ageDays : null,
+        nearest: true,
       );
+      bounds = viewport = _around(place.point, filters.radius!);
+      visibleCount = 10;
+      cameraKey++;
     });
   }
 
   Future<void> pickArea() async {
-    mapInteraction();
-    final p = await choosePlace(
+    interact();
+    final place = await choosePlace(
       context,
       title: 'Choose map area',
-      initial: focus == null ? null : (point: focus!, name: area),
+      initial: origin == null ? null : (point: origin!, name: area),
     );
-    if (p != null && mounted) {
-      zoom = 15;
-      showArea(p);
-    }
+    if (mounted && place != null) showArea(place);
   }
 
-  bool locating = false;
-  String? notice;
   Future<void> locate() async {
-    mapInteraction();
-    final request = locationRequest;
+    final version = ++locationRequest;
+    final source = ref.read(locationSourceProvider);
     setState(() => locating = true);
     try {
-      final fix = await ref.read(locationSourceProvider).current();
-      if (!mounted || request != locationRequest) return;
-      location = (latitude: fix.latitude, longitude: fix.longitude);
-      zoom = 15;
-      notice = null;
-      showArea((point: location!, name: 'Near me'));
-    } catch (_) {
-      if (mounted && request == locationRequest) {
-        setState(
-          () => notice =
-              'Location unavailable. Explore the map or choose a spot from the list.',
-        );
+      final fix = await source.current();
+      if (mounted && version == locationRequest) {
+        showArea((
+          point: (latitude: fix.latitude, longitude: fix.longitude),
+          name: 'Near me',
+        ));
       }
+    } catch (error) {
+      if (!mounted || version != locationRequest) return;
+      RouteFix? cached;
+      try {
+        cached = await source.cachedPoint();
+      } catch (_) {}
+      if (!mounted || version != locationRequest) return;
+      if (cached != null) showArea((point: cached, name: 'Last known area'));
+      setState(() {
+        initialized = true;
+        notice = cached != null
+            ? 'Current location unavailable. Showing your last known area.'
+            : error is LocationFailure
+            ? '${error.message} You can also choose an area.'
+            : 'Location unavailable. Search for an area or browse the map.';
+      });
     } finally {
       if (mounted) setState(() => locating = false);
     }
   }
 
+  void updateViewport(MapViewport next) {
+    if (listView ||
+        !next.south.isFinite ||
+        !next.north.isFinite ||
+        !next.west.isFinite ||
+        !next.east.isFinite) {
+      return;
+    }
+    viewport = next;
+    viewportDebounce?.cancel();
+    if (filters.radius != null ||
+        (_containsViewport(bounds, next) &&
+            _longitudeWidth(bounds) < _longitudeWidth(next) * 3)) {
+      return;
+    }
+    viewportDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || filters.radius != null) return;
+      setState(() {
+        initialized = true;
+        bounds = _buffered(next);
+        visibleCount = 10;
+      });
+    });
+  }
+
+  void applyFilters(SpotFilters next) {
+    if (next == filters) return;
+    interact();
+    viewportDebounce?.cancel();
+    setState(() {
+      initialized = true;
+      if (next.radius != filters.radius) {
+        if (next.radius != null) {
+          focus = origin;
+          cameraKey++;
+        } else {
+          bounds = _buffered(viewport);
+        }
+      }
+      filters = next;
+      if (next.status == SpotMapStatus.collected) heatmap = false;
+      selected = null;
+      overlapping = {};
+      visibleCount = 10;
+    });
+  }
+
+  void selectSpot(String id) {
+    interact();
+    setState(() => selected = id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (selectedCard.currentContext case final BuildContext card) {
+        unawaited(
+          Scrollable.ensureVisible(
+            card,
+            duration: const Duration(milliseconds: 220),
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          ),
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final community = widget.community;
-    final own = widget.own || (community && tab == 1);
-    final explore = !community && !widget.own;
-    final mapView = explore && tab == 0;
-    final nearby = exploreProvider(bounds);
-    final mine = mySpotsProvider(cursors.last);
-    final fetched = own
-        ? ref.watch(mine).whenData((v) => v.items)
-        : ref.watch(nearby).whenData((v) => v.items);
-    final list = fetched.value ?? [];
-    final clusters = explore && mapView
-        ? ref.watch(clusterProvider(bounds)).value
-        : null;
-    final marks = <String, RouteFix>{for (final s in list) s.id: s.point};
-    final counts = <String, int>{};
-    if (clusters != null) {
-      marks.clear();
-      for (final c in clusters) {
-        final id =
-            c['id'] as String? ?? 'cluster-${c['latitude']}-${c['longitude']}';
-        marks[id] = (
-          latitude: (c['latitude'] as num).toDouble(),
-          longitude: (c['longitude'] as num).toDouble(),
-        );
-        counts[id] = c['count'] as int;
-      }
+    if (widget.own || widget.community) {
+      return _ReportFeed(own: widget.own);
     }
-    final first =
-        list.where((s) => s.id == selected).firstOrNull ??
-        (selected == null
-            ? null
-            : ref.watch(spotDetailProvider(selected!)).value);
-
-    if (first != null) marks[first.id] = first.point;
-    final spots = [?first, ...list.where((s) => s.id != first?.id)];
+    final provider = mapSpotsProvider(query);
+    final AsyncValue<SpotResults> fetched = initialized
+        ? ref.watch(provider)
+        : const AsyncLoading<SpotResults>();
+    if (fetched.asData case AsyncData(:final value)) {
+      lastLoaded = (query: query, page: value);
+    }
+    final previous = lastLoaded;
+    final page =
+        fetched.value ??
+        (previous?.query.filters == filters && previous?.query.origin == origin
+            ? previous?.page
+            : null);
+    final spots = page?.items ?? const <Spot>[];
+    final first = spots.where((spot) => spot.id == selected).firstOrNull;
+    final display = overlapping.isEmpty
+        ? spots
+        : [
+            ...spots.where((s) => overlapping.contains(s.id)),
+            ...spots.where((s) => !overlapping.contains(s.id)),
+          ];
+    final collecting = filters.status == SpotMapStatus.collected;
+    final cameraBounds = filters.radius != null && focus != null
+        ? _cameraBounds(_around(focus!, filters.radius!))
+        : null;
     return AppPage(
-      title: community
-          ? 'Community'
-          : own
-          ? 'My reports'
-          : 'Litter Map',
-      root: explore || community,
+      title: 'Litter Map',
+      root: true,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
-      backTo: own ? AppRoutes.profile : AppRoutes.home,
       bottomNavigation: const BottomNavBar(),
       actions: [
         IconButton(
           tooltip: 'Refresh spots',
-          onPressed: () => own ? ref.invalidate(mine) : refreshMap(),
+          onPressed: initialized ? () => ref.invalidate(provider) : null,
           icon: const Icon(Icons.refresh),
         ),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (explore)
-            OutlinedButton.icon(
-              onPressed: pickArea,
-              icon: const Icon(Icons.search),
-              label: Text(area, maxLines: 2, overflow: TextOverflow.ellipsis),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: pickArea,
+                  icon: const Icon(Icons.search),
+                  label: Text(
+                    area,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: locating ? null : locate,
+                label: const Text('Find near me'),
+                icon: locating
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          FilterTabs(
+            labels: const ['Active litter', 'Collected'],
+            selected: collecting ? 1 : 0,
+            onChanged: (index) {
+              applyFilters((
+                status: index == 1
+                    ? SpotMapStatus.collected
+                    : SpotMapStatus.active,
+                category: filters.category,
+                radius: filters.radius,
+                ageDays: filters.ageDays,
+                nearest: filters.nearest,
+              ));
+            },
+          ),
+          Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton.icon(
+                onPressed: () async {
+                  interact();
+                  final next = await showModalBottomSheet<SpotFilters>(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    builder: (_) =>
+                        _MapFilters(filters, hasOrigin: origin != null),
+                  );
+                  if (mounted && next != null) applyFilters(next);
+                },
+                icon: const Icon(Icons.tune),
+                label: const Text('Filters'),
+              ),
+              if (supportsSpotMap)
+                TextButton.icon(
+                  onPressed: () {
+                    interact();
+                    setState(() => listView = !listView);
+                  },
+                  icon: Icon(listView ? Icons.map_outlined : Icons.list),
+                  label: Text(listView ? 'Show map' : 'Show list'),
+                ),
+              if (!listView && !collecting)
+                FilterChip(
+                  label: const Text('Heatmap'),
+                  selected: heatmap,
+                  onSelected: (value) {
+                    interact();
+                    setState(() => heatmap = value);
+                  },
+                ),
+            ],
+          ),
+          if (filters.category != null ||
+              filters.radius != null ||
+              filters.ageDays != null ||
+              filters.nearest ||
+              filters.status == SpotMapStatus.verification ||
+              filters.status == SpotMapStatus.open)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                [
+                  if (filters.category != null) filters.category!,
+                  if (filters.status == SpotMapStatus.verification ||
+                      filters.status == SpotMapStatus.open)
+                    filters.status.label,
+                  if (filters.radius != null)
+                    'Within ${formatWalkDistance(filters.radius!.toDouble())}',
+                  if (filters.ageDays != null) 'Last ${filters.ageDays} days',
+                  if (filters.nearest) 'Nearest first',
+                ].join(' · '),
+                style: AppText.caption,
+              ),
             ),
-          if (!widget.own) ...[
+          if (supportsSpotMap)
+            Offstage(
+              offstage: listView,
+              child: ClipRRect(
+                borderRadius: AppRadius.card,
+                child: SpotMap(
+                  height: (MediaQuery.sizeOf(context).height * .41).clamp(
+                    176.0,
+                    425.0,
+                  ),
+                  reports: spots,
+                  selected: selected,
+                  heatmap: heatmap,
+                  focus: focus,
+                  cameraBounds: cameraBounds,
+                  zoom: 12,
+                  cameraKey: cameraKey,
+                  onPan: interact,
+                  onAvailable: () {
+                    if (mounted && mapFailed) setState(() => mapFailed = false);
+                  },
+                  onUnavailable: () {
+                    if (mounted) setState(() => mapFailed = true);
+                  },
+                  onViewport: updateViewport,
+                  onSelect: selectSpot,
+                  onClearSelection: () {
+                    interact();
+                    if (selected != null) setState(() => selected = null);
+                  },
+                  onOverlapping: (ids) {
+                    if (!mounted || ids.isEmpty) return;
+                    setState(() {
+                      overlapping = ids;
+                      visibleCount = 10;
+                      listView = true;
+                    });
+                  },
+                ),
+              ),
+            ),
+          if (!listView && !mapFailed && origin != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () {
+                  interact();
+                  setState(() {
+                    focus = origin;
+                    cameraKey++;
+                  });
+                },
+                icon: const Icon(Icons.center_focus_strong_outlined, size: 18),
+                label: const Text('Recenter'),
+              ),
+            ),
+          if (!listView && !mapFailed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: heatmap
+                  ? const Text(
+                      'Blue to red · lower to higher litter density',
+                      style: AppText.caption,
+                    )
+                  : Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        for (final status
+                            in collecting
+                                ? [SpotMapStatus.collected]
+                                : [
+                                    SpotMapStatus.open,
+                                    SpotMapStatus.verification,
+                                  ])
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.circle,
+                                color: spotMarkerColor(status),
+                                size: 13,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(status.label, style: AppText.caption),
+                            ],
+                          ),
+                      ],
+                    ),
+            ),
+          if (mapFailed && !listView)
+            AppNotice(
+              'The map could not load.',
+              status: AppStatus.warning,
+              actionLabel: 'Show sightings list',
+              onAction: () => setState(() => listView = true),
+            ),
+          if (notice != null) AppNotice(notice!, status: AppStatus.warning),
+          if (fetched.isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Finding litter sightings…', style: AppText.caption),
+            ),
+          if (fetched.hasError)
+            AppNotice(
+              page != null
+                  ? 'Showing the last loaded sightings.'
+                  : 'Could not load sightings.',
+              status: AppStatus.warning,
+              actionLabel: 'Retry loading sightings',
+              onAction: () => ref.invalidate(provider),
+            ),
+          if (page?.truncated == true)
+            Text(
+              filters.radius != null
+                  ? 'Showing the first 500 spots. Narrow the distance or choose a category.'
+                  : 'Showing the first 500 spots. Zoom in or narrow the filters.',
+              style: AppText.caption,
+            ),
+          if (fetched.asData != null && spots.isEmpty)
+            AppNotice(
+              collecting
+                  ? 'No collected spots match this area and filters.'
+                  : 'No active litter spots match this area and filters.',
+              actionLabel: collecting ? null : 'Log litter',
+              onAction: collecting
+                  ? null
+                  : () => openPage(context, AppRoutes.scan),
+            ),
+          if (listView && overlapping.isNotEmpty)
+            const Text(
+              'Spots from the selected cluster appear first.',
+              style: AppText.caption,
+            ),
+          for (final spot in listView ? display.take(visibleCount) : [?first])
+            Padding(
+              key: listView ? ValueKey(spot.id) : selectedCard,
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ReportCard(
+                spot: spot,
+                location: origin,
+                feed: false,
+                showDirections: !listView,
+                quickDirections: listView,
+              ),
+            ),
+          if (listView && spots.length > visibleCount)
+            TextButton(
+              onPressed: () => setState(() => visibleCount += 10),
+              child: const Text('Show more spots'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+double _wrapLongitude(double value) => (value + 180) % 360 - 180;
+
+double _longitudeWidth(MapViewport value) {
+  final width = value.east - value.west;
+  return width < 0 ? width + 360 : width;
+}
+
+MapViewport _around(RouteFix point, int meters) {
+  final delta = meters / 111000;
+  final lonDelta =
+      delta / math.max(.01, math.cos(point.latitude * math.pi / 180));
+  return (
+    south: math.max(-90, point.latitude - delta),
+    north: math.min(90, point.latitude + delta),
+    west: _wrapLongitude(point.longitude - lonDelta),
+    east: _wrapLongitude(point.longitude + lonDelta),
+  );
+}
+
+LatLngBounds _cameraBounds(MapViewport value) => LatLngBounds(
+  southwest: LatLng(value.south.clamp(-85, 85).toDouble(), value.west),
+  northeast: LatLng(
+    value.north.clamp(-85, 85).toDouble(),
+    value.east < value.west ? value.east + 360 : value.east,
+  ),
+);
+
+bool _containsViewport(MapViewport outer, MapViewport inner) =>
+    inner.south >= outer.south &&
+    inner.north <= outer.north &&
+    (outer.west == -180 && outer.east == 180 ||
+        (inner.west - outer.west + 360) % 360 + _longitudeWidth(inner) <=
+            _longitudeWidth(outer));
+
+MapViewport _buffered(MapViewport value) {
+  final width = _longitudeWidth(value);
+  final latitudePadding = (value.north - value.south) * .3;
+  return (
+    south: math.max(-90, value.south - latitudePadding),
+    north: math.min(90, value.north + latitudePadding),
+    west: width >= 225 ? -180 : _wrapLongitude(value.west - width * .3),
+    east: width >= 225 ? 180 : _wrapLongitude(value.east + width * .3),
+  );
+}
+
+class _MapFilters extends StatefulWidget {
+  const _MapFilters(this.initial, {required this.hasOrigin});
+  final SpotFilters initial;
+  final bool hasOrigin;
+
+  @override
+  State<_MapFilters> createState() => _MapFiltersState();
+}
+
+class _MapFiltersState extends State<_MapFilters> {
+  late SpotMapStatus status = widget.initial.status;
+  late String category = widget.initial.category ?? '';
+  late int radius = widget.initial.radius ?? 0;
+  late int age = widget.initial.ageDays ?? 0;
+  late bool nearest = widget.initial.nearest;
+
+  Widget field<T>(
+    String label,
+    T value,
+    Map<T, String> options,
+    ValueChanged<T?>? change,
+  ) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: DropdownButtonFormField<T>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final item in options.entries)
+          DropdownMenuItem(value: item.key, child: Text(item.value)),
+      ],
+      onChanged: change,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Map filters', style: AppText.heading),
+          const SizedBox(height: 12),
+          if (status != SpotMapStatus.collected)
+            field('Cleanup status', status, {
+              for (final s in SpotMapStatus.values)
+                if (s != SpotMapStatus.collected) s: s.label,
+            }, (value) => setState(() => status = value!)),
+          field('Waste category', category, {
+            '': 'All materials',
+            for (final c in LitterTypePicker.types) c: c,
+          }, (value) => setState(() => category = value!)),
+          field<int>(
+            'Distance',
+            radius,
+            const {
+              0: 'Map area',
+              1000: '1 km',
+              5000: '5 km',
+              10000: '10 km',
+              25000: '25 km',
+            },
+            widget.hasOrigin
+                ? (value) => setState(() => radius = value!)
+                : null,
+          ),
+          field('Report age', age, const {
+            0: 'Any time',
+            7: 'Last 7 days',
+            30: 'Last 30 days',
+          }, (value) => setState(() => age = value!)),
+          field<bool>(
+            'Sort by',
+            nearest,
+            const {false: 'Newest', true: 'Nearest'},
+            widget.hasOrigin
+                ? (value) => setState(() => nearest = value!)
+                : null,
+          ),
+          if (!widget.hasOrigin)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Find near me or choose an area to filter by distance or sort by nearest.',
+              ),
+            ),
+          PrimaryButton(
+            'Apply filters',
+            onPressed: () => Navigator.pop(context, (
+              status: status,
+              category: category.isEmpty ? null : category,
+              radius: radius == 0 ? null : radius,
+              ageDays: age == 0 ? null : age,
+              nearest: nearest,
+            )),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ReportFeed extends ConsumerStatefulWidget {
+  const _ReportFeed({required this.own});
+  final bool own;
+  @override
+  ConsumerState<_ReportFeed> createState() => _ReportFeedState();
+}
+
+class _ReportFeedState extends ConsumerState<_ReportFeed> {
+  final cursors = <String?>[null];
+  int tab = 0, visibleCount = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final own = widget.own || tab == 1;
+    final mine = mySpotsProvider(cursors.last);
+    final nearby = exploreProvider(world);
+    final fetched = own
+        ? ref.watch(mine).whenData((page) => page.items)
+        : ref.watch(nearby).whenData((page) => page.items);
+    final spots = fetched.value ?? [];
+    void refresh() => own ? ref.invalidate(mine) : ref.invalidate(nearby);
+    return AppPage(
+      title: widget.own ? 'My reports' : 'Community',
+      root: !widget.own,
+      backTo: own ? AppRoutes.profile : AppRoutes.home,
+      bottomNavigation: const BottomNavBar(),
+      actions: [
+        IconButton(
+          tooltip: 'Refresh spots',
+          onPressed: refresh,
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!widget.own)
             FilterTabs(
-              labels: community
-                  ? const ['Sightings', 'My reports']
-                  : const ['Map', 'List'],
+              labels: const ['Sightings', 'My reports'],
               selected: tab,
               onChanged: (value) => setState(() {
                 tab = value;
                 visibleCount = 10;
               }),
             ),
-            const SizedBox(height: 12),
-          ],
-          if (explore &&
-              (bounds != world || fetched.hasValue || fetched.hasError))
-            Offstage(
-              offstage: !mapView,
-              child: ClipRRect(
-                borderRadius: AppRadius.card,
-                child: SpotMap(
-                  height: (MediaQuery.sizeOf(context).height * .42).clamp(
-                    160.0,
-                    425.0,
-                  ),
-                  points: marks,
-                  counts: counts,
-                  categories: {
-                    for (final spot in spots) spot.id: spot.category,
-                  },
-                  selected: selected,
-                  focus: focus,
-                  zoom: zoom,
-                  cameraKey: cameraKey,
-                  onPan: mapInteraction,
-                  onUnavailable: () {
-                    if (mounted) {
-                      setState(() {
-                        tab = 1;
-                        notice =
-                            'Map unavailable. Showing sightings in this area.';
-                      });
-                    }
-                  },
-                  onViewport: (v) {
-                    if (mounted && tab == 0 && bounds != v) {
-                      setState(() {
-                        bounds = v;
-                        visibleCount = 10;
-                      });
-                    }
-                  },
-                  onSelect: (id) {
-                    mapInteraction();
-                    if ((counts[id] ?? 1) > 1) {
-                      setState(() {
-                        focus = marks[id];
-                        final width = (bounds.east - bounds.west + 360) % 360;
-                        zoom =
-                            (math.log(360 / (width <= 0 ? 360 : width)) /
-                                        math.ln2 +
-                                    3)
-                                .clamp(3, 20);
-                        cameraKey++;
-                        if (zoom >= 20) {
-                          tab = 1;
-                          notice = 'Choose a sighting from this location.';
-                        }
-                      });
-                    } else {
-                      setState(() => selected = id);
-                    }
-                  },
-                ),
-              ),
-            ),
-          if (explore)
-            Wrap(
-              children: [
-                TextButton.icon(
-                  onPressed: locating ? null : locate,
-                  icon: const Icon(Icons.my_location),
-                  label: Text(locating ? 'Finding location…' : 'Near Me'),
-                ),
-                if (mapView && (first != null || focus != null))
-                  TextButton.icon(
-                    onPressed: () => setState(() {
-                      focus = first?.point ?? focus;
-                      cameraKey++;
-                    }),
-                    icon: const Icon(Icons.center_focus_strong_outlined),
-                    label: const Text('Recenter'),
-                  ),
-              ],
-            ),
-          if (notice != null) AppNotice(notice!, status: AppStatus.warning),
           if (own) const _PendingReports(),
-          if (mapView) const SizedBox(height: 12),
           if (!own && ref.watch(nearby).value?.truncated == true)
-            Text(
-              community
-                  ? 'Showing a selection of open sightings. Explore the map for a specific area.'
-                  : 'Zoom in to see more spots.',
-              style: AppText.caption,
-            ),
+            const Text('Explore the litter map to see more sightings.'),
           if (fetched.isLoading) const AppLoading('Finding litter sightings'),
           if (fetched.hasError)
-            TextButton(
-              onPressed: () =>
-                  own ? ref.invalidate(mine) : ref.invalidate(nearby),
-              child: const Text('Could not load spots · Retry'),
+            AppNotice(
+              'Could not load spots.',
+              status: AppStatus.warning,
+              actionLabel: 'Retry',
+              onAction: refresh,
             ),
-          if (fetched.hasValue && spots.isEmpty) ...[
+          if (fetched.hasValue && spots.isEmpty)
             Text(
               own
                   ? 'Your posted litter spots will appear here.'
                   : 'No open litter spots in this area.',
             ),
-            TextButton.icon(
-              onPressed: () => openPage(context, AppRoutes.scan),
-              icon: const Icon(Icons.add_a_photo_outlined),
-              label: const Text('Log litter'),
-            ),
-          ],
-          for (final spot in spots.take(mapView ? 1 : visibleCount))
+          for (final spot in spots.take(visibleCount))
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _ReportCard(
                 spot: spot,
-                location: location,
-                feed: community,
-                showDirections: mapView,
+                location: null,
+                feed: !widget.own,
+                showDirections: false,
               ),
             ),
-          if (!mapView && spots.length > visibleCount)
+          if (spots.length > visibleCount)
             TextButton(
               onPressed: () => setState(() => visibleCount += 10),
               child: const Text('Show more spots'),
@@ -397,15 +844,19 @@ class _ExploreState extends ConsumerState<ExplorePage> {
 Future<void> _openDirections(BuildContext context, Spot spot) async {
   final point = spot.point;
   final coords = '${point.latitude},${point.longitude}';
-  try {
-    if (await launchUrl(
-      Uri.parse('geo:$coords?q=$coords'),
-      mode: LaunchMode.externalApplication,
-    )) {
-      return;
+  for (final uri in [
+    Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      'destination': coords,
+      'travelmode': 'walking',
+    }),
+    Uri.parse('geo:$coords?q=$coords'),
+  ]) {
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Try the next URI when the device has no handler for this one.
     }
-  } catch (_) {
-    // Android also throws when no activity can handle geo URIs.
   }
   if (context.mounted) {
     toast(context, 'Could not open directions in a maps app.');
@@ -523,23 +974,26 @@ class _ReportCard extends ConsumerWidget {
     required this.location,
     required this.feed,
     required this.showDirections,
+    this.quickDirections = false,
   });
   final Spot spot;
   final RouteFix? location;
-  final bool feed, showDirections;
+  final bool feed, showDirections, quickDirections;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     void open() => openPage(context, '/spots/${spot.id}');
     final point = location;
-    final distance = point == null
-        ? null
-        : Geolocator.distanceBetween(
-            point.latitude,
-            point.longitude,
-            spot.point.latitude,
-            spot.point.longitude,
-          ).round();
+    final distance =
+        spot.distance ??
+        (point == null
+            ? null
+            : Geolocator.distanceBetween(
+                point.latitude,
+                point.longitude,
+                spot.point.latitude,
+                spot.point.longitude,
+              ));
     final status = spot.statusLabel;
     final description = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -550,7 +1004,7 @@ class _ReportCard extends ConsumerWidget {
           [
             status,
             if (spot.place.isNotEmpty) spot.place,
-            if (distance != null) '$distance m away',
+            if (distance != null) '${formatWalkDistance(distance)} away',
           ].join(' · '),
           style: AppText.caption,
         ),
@@ -617,7 +1071,13 @@ class _ReportCard extends ConsumerWidget {
                 SpotPhotoTile(spot.id, 0, small: true),
                 const SizedBox(width: 12),
                 Expanded(child: description),
-                if (!showDirections)
+                if (quickDirections)
+                  IconButton(
+                    tooltip: 'Directions',
+                    icon: const Icon(Icons.directions_outlined),
+                    onPressed: () => _openDirections(context, spot),
+                  )
+                else
                   Icon(
                     Icons.chevron_right_rounded,
                     color: context.colors.primary,
@@ -928,7 +1388,7 @@ class _SpotPageState extends ConsumerState<SpotPage> {
                       await ref.read(spotApiProvider).withdraw(s.id);
                       if (!mounted) return;
                       ref.invalidate(mySpotsProvider);
-                      ref.invalidate(clusterProvider);
+                      ref.invalidate(mapSpotsProvider);
                       ref.invalidate(totalsProvider);
                       ref.invalidate(exploreProvider);
                       Navigator.pop(this.context);

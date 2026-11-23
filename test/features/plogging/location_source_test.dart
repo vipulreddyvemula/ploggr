@@ -5,14 +5,25 @@ import 'package:ploggr/features/plogging/data/location_source.dart';
 
 class _Device extends GeolocatorPlatform {
   bool enabled = true;
+  LocationPermission permission = LocationPermission.denied;
   LocationPermission grant = LocationPermission.denied;
   int requests = 0;
+  Position? position;
   final positions = StreamController<Position>();
   @override
   Future<bool> isLocationServiceEnabled() async => enabled;
   @override
-  Future<LocationPermission> checkPermission() async =>
-      LocationPermission.denied;
+  Future<LocationPermission> checkPermission() async => permission;
+  @override
+  Future<Position?> getLastKnownPosition({
+    bool forceLocationManager = false,
+  }) async => position;
+
+  @override
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async => position!;
+
   @override
   Future<LocationPermission> requestPermission() async {
     requests++;
@@ -25,6 +36,33 @@ class _Device extends GeolocatorPlatform {
 }
 
 void main() {
+  test('discovery uses a cached or current fix without prompting', () async {
+    final device = _Device()
+      ..position = Position(
+        latitude: 17.5,
+        longitude: 78.1,
+        timestamp: DateTime.now(),
+        accuracy: 10,
+        altitude: 0,
+        altitudeAccuracy: 0,
+        heading: 0,
+        headingAccuracy: 0,
+        speed: 0,
+        speedAccuracy: 0,
+      );
+    final source = LocationSource(device);
+    expect(await source.cachedPoint(), isNull);
+    expect(await source.currentIfPermitted(), isNull);
+    device.permission = LocationPermission.whileInUse;
+    const point = (latitude: 17.5, longitude: 78.1);
+    expect(await source.cachedPoint(), point);
+    expect(await source.currentIfPermitted(), point);
+    device.enabled = false;
+    expect(await source.cachedPoint(), point);
+    expect(await source.currentIfPermitted(), isNull);
+    expect(device.requests, 0);
+  });
+
   test(
     'reports unavailable services and distinguishes a permanent denial',
     () async {

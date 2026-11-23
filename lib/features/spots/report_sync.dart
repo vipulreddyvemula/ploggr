@@ -146,7 +146,7 @@ final reportSyncProvider = Provider(
       if (published) {
         ref.invalidate(mySpotsProvider);
         ref.invalidate(totalsProvider);
-        ref.invalidate(clusterProvider);
+        ref.invalidate(mapSpotsProvider);
         ref.invalidate(exploreProvider);
       }
       ref.invalidate(pendingSpotDraftsProvider);

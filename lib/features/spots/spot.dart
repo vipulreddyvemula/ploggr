@@ -12,6 +12,29 @@ typedef SpotPhoto = ({
 typedef MapViewport = ({double south, double west, double north, double east});
 const world = (south: -90.0, west: -180.0, north: 90.0, east: 180.0);
 
+enum SpotMapStatus {
+  active('Active litter'),
+  open('Needs cleanup'),
+  verification('Needs verification'),
+  collected('Collected');
+
+  const SpotMapStatus(this.label);
+  final String label;
+}
+
+typedef SpotFilters = ({
+  SpotMapStatus status,
+  String? category,
+  int? radius,
+  int? ageDays,
+  bool nearest,
+});
+typedef SpotQuery = ({
+  MapViewport bounds,
+  SpotFilters filters,
+  RouteFix? origin,
+});
+
 class Spot {
   Spot.fromJson(Map data)
     : id = data['id'] as String,
@@ -27,6 +50,7 @@ class Spot {
       status = data['status'] as String,
       mine = data['mine'] as bool,
       photoCount = data['photoCount'] as int,
+      distance = (data['distance'] as num?)?.toDouble(),
       point = (
         latitude: (data['latitude'] as num).toDouble(),
         longitude: (data['longitude'] as num).toDouble(),
@@ -36,6 +60,12 @@ class Spot {
   final bool needsChecking, stale;
   final String locationSource;
   final String? previousReportId;
+  final double? distance;
+  SpotMapStatus get mapStatus => status == 'collected'
+      ? SpotMapStatus.collected
+      : needsChecking || stale
+      ? SpotMapStatus.verification
+      : SpotMapStatus.open;
   String get statusLabel => status == 'collected'
       ? 'Collected'
       : needsChecking

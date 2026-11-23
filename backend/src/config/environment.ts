@@ -47,6 +47,7 @@ export interface Environment extends DatabaseEnvironment {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   GEMINI_FALLBACK_MODELS?: string[];
+  PHOTON_URL?: string;
 }
 
 export const defaultGeminiFallbackModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
@@ -103,6 +104,17 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     typeof config.GEMINI_MODEL === 'string' && config.GEMINI_MODEL.trim()
       ? config.GEMINI_MODEL.trim()
       : undefined;
+  const photonUrl = config.PHOTON_URL || undefined;
+  if (photonUrl !== undefined) {
+    if (typeof photonUrl !== 'string' || !URL.canParse(photonUrl)) {
+      throw new Error('Invalid PHOTON_URL');
+    }
+    const url = new URL(photonUrl);
+    if (!['http:', 'https:'].includes(url.protocol) ||
+        url.username || url.password || url.search || url.hash) {
+      throw new Error('Invalid PHOTON_URL');
+    }
+  }
 
   return {
     evidenceStorage: storageEnvironment(config),
@@ -113,6 +125,7 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     PORT: port,
     GEMINI_API_KEY: geminiApiKey,
     GEMINI_MODEL: geminiModel,
+    PHOTON_URL: photonUrl,
     GEMINI_FALLBACK_MODELS: parseGeminiFallbackModels(config.GEMINI_FALLBACK_MODELS),
     ...database,
   };

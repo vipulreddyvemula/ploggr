@@ -59,7 +59,7 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
     if (view.phase == TrackPhase.completed) {
       ref.invalidate(resumablePlogProvider);
       ref.invalidate(exploreProvider);
-      ref.invalidate(clusterProvider);
+      ref.invalidate(mapSpotsProvider);
       ref.invalidate(mySpotsProvider);
       ref.invalidate(fieldData);
     }

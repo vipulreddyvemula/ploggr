@@ -6,16 +6,21 @@ import { parseCapture, parseMetadataField } from '../evidence/capture-metadata';
 import { requireRecorder } from '../plogs/recording-device';
 import { EvidenceStorage } from '../evidence/evidence-storage';
 import { type PhotoUpload, validatePhoto } from '../evidence/evidence.service';
-import { CollectionFields, MapQuery, SpotFields, ObservationInput } from './reports.dto';
+import { CollectionFields, DiscoverQuery, MapQuery, SpotFields, ObservationInput } from './reports.dto';
 
 const visible = "r.collection_plog_id IS NULL AND r.status IN ('open','collected')";
-const selection = `SELECT r.id, r.previous_report_id AS "previousReportId", r.location_source AS "locationSource",
-  (r.status='open' AND coalesce(r.last_seen_at,r.created_at) < now()-interval '30 days') AS stale, r.category, r.notes, r.place, r.status, r.last_seen_at AS "lastSeenAt",
-  EXISTS (SELECT 1 FROM spot_observations o WHERE o.report_id=r.id AND o.outcome='missing' AND o.verification IN ('verified','legacy')
-    AND coalesce(o.observed_at,o.created_at)>coalesce(r.last_seen_at,r.created_at)) AS "needsChecking", r.created_at AS "createdAt",
+const stale = "coalesce(r.last_seen_at,r.created_at) < now()-interval '30 days'";
+const needsChecking = `EXISTS (SELECT 1 FROM spot_observations o WHERE o.report_id=r.id
+  AND o.outcome='missing' AND o.verification IN ('verified','legacy')
+  AND coalesce(o.observed_at,o.created_at)>coalesce(r.last_seen_at,r.created_at))`;
+const selectReports = (origin?: string | null) => `SELECT r.id, r.previous_report_id AS "previousReportId", r.location_source AS "locationSource",
+  (r.status='open' AND ${stale}) AS stale, r.category, r.notes, r.place, r.status, r.last_seen_at AS "lastSeenAt",
+  ${needsChecking} AS "needsChecking", r.created_at AS "createdAt",
   ST_Y(r.location::geometry) AS latitude, ST_X(r.location::geometry) AS longitude,
   r.author_id=$1 AS mine, (SELECT count(*)::int FROM litter_report_photos WHERE report_id=r.id) AS "photoCount"
+  ${origin ? `, ST_Distance(r.location,${origin}) AS distance` : ''}
   FROM litter_reports r`;
+const selection = selectReports();
 const digest = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 
 @Injectable()
@@ -25,18 +30,37 @@ export class ReportsService {
     private readonly storage: EvidenceStorage,
   ) {}
 
-  async list(owner: string, viewport: MapQuery) {
-    const { south, north, west, east } = viewport;
+  async list(owner: string, query: DiscoverQuery) {
+    const { south, north, west, east, lat, lon, radius, ageDays, category, sort, status, limit = 100 } = query;
     if (+south > +north) throw new BadRequestException('Invalid viewport');
+    const origin = lat !== undefined && lon !== undefined;
+    if ((lat === undefined) !== (lon === undefined) || (!origin && (radius || sort === 'nearest'))) {
+      throw new BadRequestException('Choose an origin for nearby discovery');
+    }
     const inBox = (left: string, right: string) =>
       `r.location::geometry && ST_MakeEnvelope(${left},$2,${right},$3,4326)`;
     const bounds = +west <= +east ? inBox('$4', '$5') : `(${inBox('$4', '180')} OR ${inBox('-180', '$5')})`;
+    const params: (string | number)[] = [owner, south, north, west, east];
+    const bind = (value: string | number) => '$' + params.push(value);
+    const location = origin ? `ST_SetSRID(ST_MakePoint(${bind(+lon)},${bind(+lat)}),4326)::geography` : null;
+    const filters = [
+      bounds,
+      'r.collection_plog_id IS NULL',
+      status === 'collected' ? "r.status='collected'" : "r.status='open'",
+    ];
+    if (status === 'open') filters.push(`NOT (${stale} OR ${needsChecking})`);
+    if (status === 'verification') filters.push(`(${stale} OR ${needsChecking})`);
+    if (category) filters.push(`r.category=${bind(category)}`);
+    if (radius) filters.push(`ST_DWithin(r.location,${location},${bind(radius)})`);
+    if (ageDays) filters.push(`r.created_at>=now()-${bind(ageDays)}::int*interval '1 day'`);
+    const order = sort === 'nearest' ? 'distance, ' : '';
     const rows = await this.db.query(
-      `${selection} WHERE r.status='open' AND ${bounds}
-      ORDER BY r.created_at DESC,r.id DESC LIMIT 101`,
-      [owner, south, north, west, east],
+      `${selectReports(location)}
+      WHERE ${filters.join(' AND ')}
+      ORDER BY ${order}r.created_at DESC,r.id DESC LIMIT ${bind(limit + 1)}`,
+      params,
     );
-    return { items: rows.slice(0, 100), truncated: rows.length > 100 };
+    return { items: rows.slice(0, limit), truncated: rows.length > limit };
   }
 
   async clusters(viewport: MapQuery) {

@@ -8,13 +8,17 @@ import '../../core/network/protected_api.dart';
 import '../auth/session/session_controller.dart';
 import 'spot.dart';
 
+typedef SpotResults = ({List<Spot> items, bool truncated});
+
 class SpotApi {
   const SpotApi(this.client, [this.drafts]);
   final ProtectedApi client;
   final PlogDrafts? drafts;
-  Future<({List<Spot> items, bool truncated})> explore(
-    MapViewport bounds,
-  ) async {
+  Future<SpotResults> explore(
+    MapViewport bounds, {
+    SpotFilters? filters,
+    RouteFix? origin,
+  }) async {
     final result = await client.request<Map>(
       'GET',
       'litter-reports',
@@ -23,6 +27,16 @@ class SpotApi {
         'north': bounds.north,
         'west': bounds.west,
         'east': bounds.east,
+        if (filters != null) ...{
+          'status': filters.status.name,
+          'sort': filters.nearest && origin != null ? 'nearest' : 'newest',
+          'category': ?filters.category,
+          'radius': ?(origin == null ? null : filters.radius),
+          'ageDays': ?filters.ageDays,
+          'lat': ?origin?.latitude,
+          'lon': ?origin?.longitude,
+          'limit': 500,
+        },
       },
     );
     return (
@@ -96,18 +110,6 @@ class SpotApi {
         queryParameters: {'lat': lat, 'lon': lon},
       ))!).cast<Map>().map(Spot.fromJson).toList();
 
-  Future<List<Map>> clusters(MapViewport b) async =>
-      ((await client.request<List>(
-        'GET',
-        'litter-reports/clusters',
-        queryParameters: {
-          'south': b.south,
-          'west': b.west,
-          'north': b.north,
-          'east': b.east,
-        },
-      ))!).cast<Map>();
-
   Future<List<Map>> places(Map<String, dynamic> params) async =>
       ((await client.request<List>(
         'GET',
@@ -172,10 +174,13 @@ final exploreProvider = FutureProvider.autoDispose.family(
   (ref, MapViewport bounds) => ref.watch(spotApiProvider).explore(bounds),
   retry: (_, _) => null,
 );
-final clusterProvider = FutureProvider.autoDispose.family(
-  (ref, MapViewport bounds) => ref.watch(spotApiProvider).clusters(bounds),
-  retry: (_, _) => null,
-);
+final mapSpotsProvider = FutureProvider.autoDispose
+    .family<SpotResults, SpotQuery>(
+      (ref, SpotQuery query) => ref
+          .watch(spotApiProvider)
+          .explore(query.bounds, filters: query.filters, origin: query.origin),
+      retry: (_, _) => null,
+    );
 final mySpotsProvider = FutureProvider.autoDispose.family(
   (ref, String? before) => ref.watch(spotApiProvider).mine(before),
   retry: (_, _) => null,

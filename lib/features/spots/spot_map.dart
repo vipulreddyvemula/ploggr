@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
@@ -7,12 +8,14 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:material_ui/material_ui.dart';
 import '../plogging/data/location_source.dart';
 import 'spot.dart';
+import 'spot_map_layers.dart';
 
 LatLng coordinates(RouteFix p) => LatLng(p.latitude, p.longitude);
 
 /// Default fallback location for India
 const defaultIndiaCenter = LatLng(20.5937, 78.9629);
 const defaultIndiaZoom = 4.5;
+bool get supportsSpotMap => kIsWeb || Platform.isAndroid || Platform.isIOS;
 
 /// Fit a walking route around its first fix, including walks across the dateline.
 LatLngBounds? routeBounds(List<RouteFix> route) {
@@ -41,8 +44,13 @@ class SpotMap extends StatefulWidget {
   const SpotMap({
     super.key,
     this.points = const {},
+    this.reports,
+    this.heatmap = false,
+    this.onOverlapping,
+    this.onClearSelection,
     this.route = const [],
     this.focus,
+    this.cameraBounds,
     this.fitRoute = false,
     this.interactive = true,
     this.simplifyRoute = false,
@@ -50,9 +58,8 @@ class SpotMap extends StatefulWidget {
     this.onCenter,
     this.onPan,
     this.onUnavailable,
+    this.onAvailable,
     this.selected,
-    this.counts = const {},
-    this.categories = const {},
     this.accuracy,
     this.accuracyPoint,
     this.breaks = const [],
@@ -63,18 +70,21 @@ class SpotMap extends StatefulWidget {
     this.height = 245,
   });
   final Map<String, RouteFix> points;
+  final List<Spot>? reports;
+  final bool heatmap;
+  final ValueChanged<Set<String>>? onOverlapping;
+  final VoidCallback? onClearSelection;
   final List<RouteFix> route;
   final RouteFix? focus;
+  final LatLngBounds? cameraBounds;
   final bool fitRoute, simplifyRoute, interactive;
   final ValueChanged<RouteFix>? onPin;
   final ValueChanged<String>? onSelect;
   final ValueChanged<MapViewport>? onViewport;
   final double height, zoom;
   final ValueChanged<RouteFix>? onCenter;
-  final VoidCallback? onPan, onUnavailable;
+  final VoidCallback? onPan, onUnavailable, onAvailable;
   final String? selected;
-  final Map<String, int> counts;
-  final Map<String, String> categories;
   final double? accuracy;
   final RouteFix? accuracyPoint;
   final List<int> breaks;
@@ -85,6 +95,7 @@ class SpotMap extends StatefulWidget {
 
 class _SpotMapState extends State<SpotMap> {
   MapLibreMapController? controller;
+  SpotMapLayers? layers;
   bool ready = false, failed = false, drawing = false, dirty = false;
   int generation = 0;
   final icons = <String>{};
@@ -93,7 +104,7 @@ class _SpotMapState extends State<SpotMap> {
   @override
   void initState() {
     super.initState();
-    armTimeout();
+    if (supportsSpotMap) armTimeout();
   }
 
   void armTimeout() {
@@ -116,19 +127,16 @@ class _SpotMapState extends State<SpotMap> {
   void didUpdateWidget(SpotMap old) {
     super.didUpdateWidget(old);
     if (ready &&
-        (old.focus != widget.focus || old.cameraKey != widget.cameraKey) &&
-        widget.focus != null) {
-      controller?.moveCamera(
-        CameraUpdate.newLatLngZoom(coordinates(widget.focus!), widget.zoom),
-      );
+        (old.focus != widget.focus || old.cameraKey != widget.cameraKey)) {
+      unawaited(moveCamera());
     }
     if (!mapEquals(old.points, widget.points) ||
         old.route != widget.route ||
         !listEquals(old.breaks, widget.breaks) ||
         old.simplifyRoute != widget.simplifyRoute ||
         old.selected != widget.selected ||
-        !mapEquals(old.counts, widget.counts) ||
-        !mapEquals(old.categories, widget.categories) ||
+        old.reports != widget.reports ||
+        old.heatmap != widget.heatmap ||
         old.accuracy != widget.accuracy ||
         old.accuracyPoint != widget.accuracyPoint) {
       unawaited(draw());
@@ -138,49 +146,33 @@ class _SpotMapState extends State<SpotMap> {
   Future<String> marker(
     MapLibreMapController map,
     String id,
-    int count,
     bool selected,
   ) async {
-    final routePoint = ['start', 'finish', 'latest'].contains(id);
-    final text = count > 1
-        ? '$count'
-        : routePoint
-        ? (id == 'start'
-              ? 'S'
-              : id == 'finish'
-              ? 'F'
-              : '•')
-        : '';
-    final category = widget.categories[id];
-    final key = 'pin-$text-$selected-$routePoint-$category';
+    final cleanup = id.startsWith('cleanup-');
+    final text = switch (id) {
+      'start' => 'S',
+      'finish' => 'F',
+      'start-finish' => 'S/F',
+      'latest' => '•',
+      _ => cleanup ? '✓' : '',
+    };
+    final key = 'pin-$text-$selected';
     if (icons.contains(key)) return key;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)..scale(2);
     final color = selected
         ? const Color(0xff103f20)
-        : count > 1
-        ? const Color(0xff355464)
-        : routePoint
+        : cleanup
+        ? spotMarkerColor(SpotMapStatus.collected)
+        : text.isNotEmpty
         ? const Color(0xff145e91)
-        : switch (category) {
-            'Plastic' => const Color(0xff3e5880),
-            'Paper' => const Color(0xff765522),
-            'Glass' => const Color(0xff25644c),
-            'Metal' => const Color(0xff4a5660),
-            'E-waste' => const Color(0xff704d78),
-            _ => const Color(0xff86551c),
-          };
-    final path = count > 1
-        ? (Path()..addOval(const Rect.fromLTWH(1, 1, 34, 34)))
-        : (Path()
-            ..moveTo(18, 43)
-            ..cubicTo(16, 37, 2, 25, 2, 18)
-            ..arcToPoint(
-              const Offset(34, 18),
-              radius: const Radius.circular(16),
-            )
-            ..cubicTo(34, 25, 20, 37, 18, 43)
-            ..close());
+        : const Color(0xff86551c);
+    final path = Path()
+      ..moveTo(18, 43)
+      ..cubicTo(16, 37, 2, 25, 2, 18)
+      ..arcToPoint(const Offset(34, 18), radius: const Radius.circular(16))
+      ..cubicTo(34, 25, 20, 37, 18, 43)
+      ..close();
     canvas.drawPath(path, Paint()..color = color);
     canvas.drawPath(
       path,
@@ -221,10 +213,19 @@ class _SpotMapState extends State<SpotMap> {
     if (drawing || !ready || controller == null) return;
     drawing = true;
     final map = controller!;
+    final reportLayers = layers;
     final pixelRatio = MediaQuery.devicePixelRatioOf(context);
     try {
       while (mounted && dirty && identical(map, controller)) {
         dirty = false;
+        if (reportLayers != null) {
+          await reportLayers.update(
+            widget.reports!,
+            widget.selected,
+            widget.heatmap,
+          );
+          continue;
+        }
         final points = widget.points.entries.toList();
         final route = widget.route;
         await map.clearCircles();
@@ -288,12 +289,7 @@ class _SpotMapState extends State<SpotMap> {
               for (final e in points)
                 SymbolOptions(
                   geometry: coordinates(e.value),
-                  iconImage: await marker(
-                    map,
-                    e.key,
-                    widget.counts[e.key] ?? 1,
-                    e.key == widget.selected,
-                  ),
+                  iconImage: await marker(map, e.key, e.key == widget.selected),
                   iconAnchor: 'bottom',
                   iconSize: pixelRatio * (e.key == widget.selected ? 0.6 : 0.5),
                 ),
@@ -311,6 +307,35 @@ class _SpotMapState extends State<SpotMap> {
       }
     } finally {
       drawing = false;
+      if (dirty && mounted && !identical(map, controller)) unawaited(draw());
+    }
+  }
+
+  Future<void> moveCamera() async {
+    final map = controller;
+    final bounds =
+        widget.cameraBounds ??
+        (widget.fitRoute
+            ? routeBounds([...widget.route, ...widget.points.values])
+            : null);
+    try {
+      if (bounds != null) {
+        await map?.moveCamera(
+          CameraUpdate.newLatLngBounds(
+            bounds,
+            left: 24,
+            right: 24,
+            top: 26,
+            bottom: 38,
+          ),
+        );
+      } else if (widget.focus case final RouteFix point) {
+        await map?.moveCamera(
+          CameraUpdate.newLatLngZoom(coordinates(point), widget.zoom),
+        );
+      }
+    } catch (_) {
+      // A camera update can outlive a style retry or a dismissed map.
     }
   }
 
@@ -346,7 +371,14 @@ class _SpotMapState extends State<SpotMap> {
 
   @override
   Widget build(BuildContext context) {
+    if (!supportsSpotMap) {
+      return SizedBox(
+        height: math.min(96, widget.height),
+        child: const Center(child: Text('Map unavailable on this platform.')),
+      );
+    }
     final focus = widget.focus ?? widget.route.lastOrNull;
+    final currentGeneration = generation;
     return SizedBox(
       height: widget.height,
       child: Stack(
@@ -360,8 +392,14 @@ class _SpotMapState extends State<SpotMap> {
               rotateGesturesEnabled: widget.interactive,
               tiltGesturesEnabled: widget.interactive,
               trackCameraPosition: true,
+              minMaxZoomPreference: widget.reports != null
+                  ? const MinMaxZoomPreference(2, SpotMapLayers.maxZoom)
+                  : MinMaxZoomPreference.unbounded,
               gestureRecognizers:
-                  widget.onPin != null || widget.onViewport != null
+                  widget.onPin != null ||
+                      widget.onViewport != null ||
+                      widget.onSelect != null ||
+                      widget.reports != null
                   ? {
                       Factory<EagerGestureRecognizer>(
                         EagerGestureRecognizer.new,
@@ -381,52 +419,75 @@ class _SpotMapState extends State<SpotMap> {
                 zoom: focus == null ? defaultIndiaZoom : widget.zoom,
               ),
               onMapCreated: (map) {
+                if (!mounted || generation != currentGeneration) return;
                 controller = map;
                 icons.clear();
                 map.onSymbolTapped.add((circle) {
                   final id = circle.data?['id'];
                   if (id is String) widget.onSelect?.call(id);
                 });
+                if (widget.reports != null) {
+                  map.onFeatureTapped.add((point, _, id, layer, _) async {
+                    if (layer == SpotMapLayers.pins ||
+                        layer == SpotMapLayers.selection) {
+                      widget.onSelect?.call(id);
+                    } else if (layer == SpotMapLayers.clusters) {
+                      widget.onPan?.call();
+                      try {
+                        await layers?.expand(point, widget.onOverlapping);
+                      } catch (_) {
+                        // A refresh can replace a cluster before it expands.
+                      }
+                    }
+                  });
+                }
               },
               onStyleLoadedCallback: () async {
-                if (!mounted) return;
+                final map = controller;
+                if (!mounted ||
+                    generation != currentGeneration ||
+                    map == null) {
+                  return;
+                }
                 timeout?.cancel();
+                try {
+                  if (widget.reports != null) {
+                    final reportLayers = SpotMapLayers(map);
+                    await reportLayers.add();
+                    if (!mounted || !identical(controller, map)) return;
+                    layers = reportLayers;
+                  }
+                } catch (_) {
+                  if (mounted && identical(controller, map)) {
+                    setState(() => failed = true);
+                    widget.onUnavailable?.call();
+                  }
+                  return;
+                }
                 setState(() {
                   ready = true;
                   failed = false;
                 });
-                final bounds = widget.fitRoute
-                    ? routeBounds(widget.route)
-                    : null;
-                if (bounds != null) {
-                  await controller?.moveCamera(
-                    CameraUpdate.newLatLngBounds(
-                      bounds,
-                      left: 28,
-                      right: 28,
-                      top: 24,
-                      bottom: 28,
-                    ),
-                  );
-                } else if (widget.focus != null) {
-                  await controller?.moveCamera(
-                    CameraUpdate.newLatLngZoom(
-                      coordinates(widget.focus!),
-                      widget.zoom,
-                    ),
-                  );
-                }
+                widget.onAvailable?.call();
+                await moveCamera();
                 if (!mounted) return;
                 await draw();
                 if (mounted) await viewport();
               },
               onCameraIdle: viewport,
-              onMapClick: (_, p) => widget.onPin?.call((
-                latitude: p.latitude,
-                longitude: p.longitude,
-              )),
+              onMapClick: (_, p) {
+                widget.onClearSelection?.call();
+                widget.onPin?.call((
+                  latitude: p.latitude,
+                  longitude: p.longitude,
+                ));
+              },
             ),
           ),
+          if (!ready && !failed)
+            const Center(
+              child: CircularProgressIndicator(semanticsLabel: 'Loading map'),
+            ),
           const Positioned(
             bottom: 2,
             left: 4,
@@ -450,6 +511,7 @@ class _SpotMapState extends State<SpotMap> {
                     ready = false;
                     failed = false;
                     controller = null;
+                    layers = null;
                   });
                   armTimeout();
                 },

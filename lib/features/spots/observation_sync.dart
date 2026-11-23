@@ -92,7 +92,7 @@ final observationSyncProvider = Provider(
     (report) {
       if (ref.mounted) {
         ref.invalidate(exploreProvider);
-        ref.invalidate(clusterProvider);
+        ref.invalidate(mapSpotsProvider);
         ref.invalidate(spotDetailProvider(report));
         ref.invalidate(mySpotsProvider);
         ref.invalidate(sightingSyncStatusProvider(report));

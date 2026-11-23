@@ -94,7 +94,6 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
         if (phase == SessionPhase.signedIn) {
           unawaited(sync());
           ref.invalidate(exploreProvider);
-          ref.invalidate(clusterProvider);
         }
         if (phase == SessionPhase.unavailable ||
             phase == SessionPhase.signedIn) {
