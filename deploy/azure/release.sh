@@ -15,8 +15,13 @@ docker push "$image"
 # Deploy a digest so rollbacks remain reproducible even if a commit is rebuilt.
 image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")
 
+# A job override replaces the entire execution template, including command and secret refs.
+job_template=$(mktemp)
+trap 'unlink "$job_template"' EXIT
+az containerapp job show -g "$AZURE_RESOURCE_GROUP" -n "$job" --query properties.template -o json |
+  jq --arg image "$image" '.containers[0].image = $image' >"$job_template"
 execution=$(az containerapp job start -g "$AZURE_RESOURCE_GROUP" -n "$job" \
-  --container-name migration --image "$image" --query name -o tsv)
+  --yaml "$job_template" --query name -o tsv)
 for (( attempt=0; attempt<60; attempt++ )); do
   status=$(az containerapp job execution show -g "$AZURE_RESOURCE_GROUP" -n "$job" \
     --job-execution-name "$execution" --query properties.status -o tsv)
@@ -28,14 +33,14 @@ for (( attempt=0; attempt<60; attempt++ )); do
 done
 [[ "$status" == Succeeded ]] || { echo "Migration $execution timed out" >&2; exit 1; }
 
-app=$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n "$api" -o json)
-app_id=$(jq -r '.id' <<<"$app")
+app_id=$(az containerapp show -g "$AZURE_RESOURCE_GROUP" -n "$api" --query id -o tsv)
 revision_url="https://management.azure.com$app_id?api-version=2025-07-01"
-previous=$(jq -c '{properties: {template: .properties.template}}' <<<"$app")
+template=$(az rest --uri "$revision_url" --query properties.template -o json |
+  jq -c 'del(.containers[].imageType, .initContainers[]?.imageType)')
+previous=$(jq -c '{properties: {template: .}}' <<<"$template")
 query="SELECT public.ploggr_field_work_due()"
 updated=$(jq -c --arg image "$image" --arg revision "$revision" --arg query "$query" '
-  .properties.template as $template |
-  {properties: {template: ($template |
+  {properties: {template: (
     .revisionSuffix = $revision |
     .containers[0].image = $image |
     .containers[0].probes = [
@@ -49,7 +54,7 @@ updated=$(jq -c --arg image "$image" --arg revision "$revision" --arg query "$qu
         auth: [{secretRef: "scaler-connection", triggerParameter: "connection"}]}}
     ] }
   )}}
-' <<<"$app")
+' <<<"$template")
 
 # Warm the current revision so Azure requires a ready replacement before routing traffic.
 curl --silent --show-error --max-time 60 --output /dev/null "${FIELD_API_URL%/api/}/"
