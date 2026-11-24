@@ -189,8 +189,16 @@ void main() {
         await tester.pumpAndSettle();
         expect(router.routerDelegate.currentConfiguration.uri.path, '/login');
         expect(router.canPop(), isFalse);
+        // The root sign-in form's Android back destination is public onboarding.
         await router.routerDelegate.popRoute();
         await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          '/onboarding',
+        );
+        expect(container.read(sessionControllerProvider).user, isNull);
+        await tap('Skip');
+        await waitForText('Sign up');
         expect(router.routerDelegate.currentConfiguration.uri.path, '/login');
         await expectLater(
           container.read(protectedApiProvider).request('GET', 'auth/me'),

@@ -1,8 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_ui/material_ui.dart';
 import '../../core/network/protected_api.dart';
-import '../../routes/app_routes.dart';
-import '../../shared/widgets/ploggr_ui.dart';
 import '../auth/session/session_controller.dart';
 import '../plogging/application/active_track.dart';
 
@@ -34,73 +31,4 @@ String formatWalkSummary(int seconds, {num? meters}) {
   return meters == null || meters <= 0
       ? duration
       : '$duration · ${formatWalkDistance(meters.toDouble())}';
-}
-
-class AccountStats extends ConsumerWidget {
-  const AccountStats({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final totals = ref.watch(totalsProvider);
-    final t = totals.value;
-    final reportCount = t?.reports.toString() ?? '—';
-    final distance = t == null || t.tracked == 0
-        ? '—'
-        : formatWalkDistance(t.meters / t.tracked);
-    Widget tile(
-      String value,
-      String label,
-      IconData icon,
-      String route, {
-      Color? color,
-    }) => Expanded(
-      child: StatTile(
-        value: value,
-        label: label,
-        icon: icon,
-        color: color ?? context.colors.primary,
-        onTap: () => openPage(context, route),
-      ),
-    );
-    return Column(
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            tile(
-              t == null ? '—' : '${t.count}',
-              'Sessions',
-              Icons.route_rounded,
-              AppRoutes.activity,
-            ),
-            const SizedBox(width: 8),
-            tile(
-              reportCount,
-              'My reports',
-              Icons.location_on_outlined,
-              AppRoutes.saved,
-            ),
-            const SizedBox(width: 8),
-            tile(
-              distance,
-              'Avg. tracked walk',
-              Icons.directions_walk_rounded,
-              AppRoutes.activity,
-              color: context.goldIcon,
-            ),
-          ],
-        ),
-        if (totals.isLoading)
-          const LinearProgressIndicator(semanticsLabel: 'Loading activity'),
-        if (totals.hasError)
-          TextButton.icon(
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry activity totals'),
-            onPressed: () {
-              if (totals.hasError) ref.invalidate(totalsProvider);
-            },
-          ),
-      ],
-    );
-  }
 }

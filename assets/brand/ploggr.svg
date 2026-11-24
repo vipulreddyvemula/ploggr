@@ -1,0 +1,17 @@
+<!-- Vector reconstruction from the Ploggr splash supplied by the project owner. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="194" viewBox="135 460 480 194">
+  <defs><linearGradient id="fruit" x2=".8" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#99d52e"/><stop offset="1" stop-color="#4e920c"/></linearGradient></defs>
+  <g fill="none" stroke="#103b12" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M146 644V541 M147 575c0-47 68-47 70 0 1 46-69 48-70 0Z"/>
+    <path d="M244 505v88q0 14 14 16"/>
+    <path id="g" d="M451 541v65c0 38-36 47-62 28 M450 574c0-46-68-46-68 0s68 47 68 0Z"/>
+    <path transform="translate(92)" d="M451 541v65c0 38-36 47-62 28 M450 574c0-46-68-46-68 0s68 47 68 0Z"/>
+    <path d="M573 609v-68 M574 573q2-34 30-33"/>
+  </g>
+  <circle cx="319" cy="570" r="47.5" fill="url(#fruit)" stroke="#143b0f" stroke-width="6"/>
+  <path fill="#8ac62b" d="M276 560q7-25 34-32l-9 15 8 7-15 10-3 13-13-2zm60 14 15-8 12 6-5 15-11 5z"/>
+  <path fill="#397d18" d="M343 529q-4-15-10-27l-3-2 8 26z M334 506q-32-1-29-43 35 9 29 43Z M337 507q-2-27 30-28-4 28-30 28Z"/>
+  <path fill="none" stroke="#91b54a" stroke-width="1.8" d="M335 506l-19-30m21 31 20-20"/>
+  <circle cx="326" cy="540" r="6.5" fill="white"/>
+  <path fill="white" d="m315 548 11 1 9 12 11-5 3 5-14 7q-2 1-4-1l-6-6-4 13 14 9-2 15 4 2-1 4-9-1 1-17-12-6-8 15-16-1-4 4-3-4 4-6 14 1 6-17 4-17-9 2-5 11-5-2 5-15z"/>
+</svg>

@@ -15,6 +15,26 @@ import 'live_app_harness.dart';
 import 'session_fakes.dart';
 
 void main() {
+  testWidgets(
+    'live branding follows session restoration back to the requested route',
+    (tester) async {
+      final refresh = Completer<SessionBundle>();
+      final container = await openLiveApp(
+        tester,
+        '/profile/help',
+        MemoryStore()..value = StoredSession(token),
+        FakeApi()..onRefresh = () => refresh.future,
+      );
+      expect(find.text('Plog today.'), findsOneWidget);
+      expect(find.text('Change tomorrow.'), findsOneWidget);
+      expect(find.bySemanticsLabel('Ploggr'), findsOneWidget);
+      refresh.complete(bundle());
+      await tester.pumpAndSettle();
+      expect(container.read(appRouterProvider).state.uri.path, '/profile/help');
+      expect(find.text('Change tomorrow.'), findsNothing);
+    },
+  );
+
   testWidgets('a new account starts on Home after explicit sign-out', (
     tester,
   ) async {

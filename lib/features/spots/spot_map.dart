@@ -57,6 +57,7 @@ class SpotMap extends StatefulWidget {
     this.onPin,
     this.onCenter,
     this.onPan,
+    this.onRecenter,
     this.onUnavailable,
     this.onAvailable,
     this.selected,
@@ -83,7 +84,7 @@ class SpotMap extends StatefulWidget {
   final ValueChanged<MapViewport>? onViewport;
   final double height, zoom;
   final ValueChanged<RouteFix>? onCenter;
-  final VoidCallback? onPan, onUnavailable, onAvailable;
+  final VoidCallback? onPan, onRecenter, onUnavailable, onAvailable;
   final String? selected;
   final double? accuracy;
   final RouteFix? accuracyPoint;
@@ -127,7 +128,9 @@ class _SpotMapState extends State<SpotMap> {
   void didUpdateWidget(SpotMap old) {
     super.didUpdateWidget(old);
     if (ready &&
-        (old.focus != widget.focus || old.cameraKey != widget.cameraKey)) {
+        (old.focus != widget.focus ||
+            old.fitRoute != widget.fitRoute ||
+            old.cameraKey != widget.cameraKey)) {
       unawaited(moveCamera());
     }
     if (!mapEquals(old.points, widget.points) ||
@@ -399,6 +402,7 @@ class _SpotMapState extends State<SpotMap> {
                   widget.onPin != null ||
                       widget.onViewport != null ||
                       widget.onSelect != null ||
+                      widget.onPan != null ||
                       widget.reports != null
                   ? {
                       Factory<EagerGestureRecognizer>(
@@ -487,6 +491,22 @@ class _SpotMapState extends State<SpotMap> {
           if (!ready && !failed)
             const Center(
               child: CircularProgressIndicator(semanticsLabel: 'Loading map'),
+            ),
+          if (ready && !failed && widget.onRecenter != null)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  minimumSize: const Size(48, 48),
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                onPressed: widget.onRecenter,
+                icon: const Icon(Icons.my_location_rounded, size: 19),
+                label: const Text('Recenter'),
+              ),
             ),
           const Positioned(
             bottom: 2,

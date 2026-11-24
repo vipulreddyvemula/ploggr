@@ -17,15 +17,15 @@ void main() {
     await font.load();
   });
 
-  testWidgets('badge icon has 3:1 contrast with its card', (tester) async {
+  testWidgets('scan shortcut icon has 3:1 contrast with its card', (
+    tester,
+  ) async {
     await existing.openApp(tester, '/home');
-    final icon = tester.widget<Icon>(
-      find.byIcon(Icons.workspace_premium_rounded),
-    );
+    final icon = tester.widget<Icon>(find.byIcon(Icons.add_a_photo_outlined));
     final card = tester.widget<Material>(
       find
           .ancestor(
-            of: find.byIcon(Icons.workspace_premium_rounded),
+            of: find.byIcon(Icons.add_a_photo_outlined),
             matching: find.byType(Material),
           )
           .first,

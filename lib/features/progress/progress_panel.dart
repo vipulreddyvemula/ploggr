@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../routes/app_routes.dart';
 import '../../shared/widgets/ploggr_ui.dart';
+import '../../shared/widgets/eco_art.dart';
 import '../community/field_data.dart';
 import '../home/activity_overview.dart';
 
@@ -129,164 +130,6 @@ class ProgressSnapshot extends StatelessWidget {
   });
 }
 
-class GoalCard extends ConsumerWidget {
-  const GoalCard(this.goal, {super.key});
-  final Map goal;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final target = goal['target'] as int?;
-    final progress = goal['progress'] as int;
-    final weekly = goal['cadence'] == 'week';
-    final cadence = weekly ? 'week' : 'day';
-    return EcoCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            weekly ? 'Weekly cleanup goal' : 'Daily cleanup goal',
-            style: AppText.heading,
-          ),
-          const SizedBox(height: 6),
-          if (target != null) ...[
-            Text('$progress of $target verified cleanups'),
-            const SizedBox(height: 6),
-            LinearProgressIndicator(
-              value: (progress / target).clamp(0, 1),
-              semanticsLabel: 'Personal goal progress',
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Resets ${localDate(context, goal['endsAt'], time: true)}',
-              style: AppText.caption,
-            ),
-          ] else
-            const Text('Choose a target for verified cleanups.'),
-          const SizedBox(height: 8),
-          Text(
-            'Current streak · ${goal['streak']} ${goal['streak'] == 1 ? cadence : '${cadence}s'}',
-          ),
-          Text(
-            'Longest streak · ${goal['longestStreak']} ${goal['longestStreak'] == 1 ? cadence : '${cadence}s'}',
-            style: AppText.caption,
-          ),
-          TextButton.icon(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => _GoalEditor(goal),
-            ),
-            icon: const Icon(Icons.flag_outlined),
-            label: Text(target == null ? 'Set a goal' : 'Edit goal'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalEditor extends ConsumerStatefulWidget {
-  const _GoalEditor(this.goal);
-  final Map goal;
-
-  @override
-  ConsumerState<_GoalEditor> createState() => _GoalEditorState();
-}
-
-class _GoalEditorState extends ConsumerState<_GoalEditor> {
-  late String cadence = widget.goal['cadence'];
-  late final target = TextEditingController(
-    text: (widget.goal['target'] ?? 1).toString(),
-  );
-  bool saving = false;
-  bool failed = false;
-
-  @override
-  void dispose() {
-    target.dispose();
-    super.dispose();
-  }
-
-  Future<void> save(int count) async {
-    setState(() {
-      saving = true;
-      failed = false;
-    });
-    try {
-      await writeField(
-        ref,
-        'PUT',
-        'profile/goal',
-        data: {'cadence': cadence, 'target': count},
-        reload: [
-          for (final period in ['week', 'month', 'all'])
-            'progress?period=$period',
-        ],
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          saving = false;
-          failed = true;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final count = int.tryParse(target.text.trim());
-    return PopScope(
-      canPop: !saving,
-      child: AlertDialog(
-        title: const Text('Cleanup goal'),
-        scrollable: true,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: cadence,
-              decoration: const InputDecoration(labelText: 'Repeats'),
-              items: const [
-                DropdownMenuItem(value: 'day', child: Text('Daily')),
-                DropdownMenuItem(value: 'week', child: Text('Weekly')),
-              ],
-              onChanged: saving ? null : (v) => setState(() => cadence = v!),
-            ),
-            TextField(
-              controller: target,
-              enabled: !saving,
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Verified cleanups',
-                helperText: 'Choose 1 to 100.',
-              ),
-            ),
-            if (failed)
-              const AppNotice(
-                'Could not save your goal.',
-                status: AppStatus.failure,
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: saving || count == null || count < 1 || count > 100
-                ? null
-                : () => save(count),
-            child: Text(saving ? 'Saving…' : 'Save'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class ProgressPanel extends StatefulWidget {
   const ProgressPanel({super.key});
 
@@ -388,8 +231,6 @@ class _ProgressPanelState extends State<ProgressPanel> {
               ),
             ),
             const SizedBox(height: 10),
-            GoalCard(data['goal']),
-            const SizedBox(height: 10),
             TextButton.icon(
               onPressed: () => openPage(context, AppRoutes.leaderboard),
               icon: const Icon(Icons.leaderboard_outlined),
@@ -441,6 +282,11 @@ class ImpactTotals extends StatelessWidget {
         ),
         if (carbon != null)
           const Text('Modeled disposal scenario', style: AppText.caption),
+        if (carbon == null && coverage)
+          const Text(
+            'CO₂e estimates require accepted pickup evidence and a supported disposal scenario.',
+            style: AppText.caption,
+          ),
         if (coverage && (data['materials'] as num? ?? 0) > 0)
           Text(
             "Weight available for ${data['weightMaterials']} of ${data['materials']} material totals",
@@ -509,6 +355,99 @@ class _ProgressChart extends StatelessWidget {
               Text('${date(series.last)} · UTC', style: AppText.caption),
           ],
         ),
+      ],
+    );
+  }
+}
+
+class AccountStats extends ConsumerWidget {
+  const AccountStats({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final totals = ref.watch(totalsProvider);
+    final activity = totals.value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RewardData('progress?period=all', (data) {
+          final impact = data['totals'] as Map;
+          final carbon = impact['potentialCo2eKg'] as num?;
+          final weights = [
+            (impact['measuredKg'], 'Measured litter'),
+            (impact['reviewedKg'], 'Reviewed estimate'),
+            (impact['estimatedKg'], 'AI estimate'),
+          ];
+          final weight = weights.where((w) => w.$1 != null).firstOrNull;
+          return EcoCard(
+            color: context.colors.primaryContainer,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+            child: AdaptiveTiles(
+              minWidth: 72,
+              spacing: 0,
+              children: [
+                for (final (icon, value, label) in [
+                  (
+                    Icons.directions_run,
+                    '${activity?.count ?? impact['completedPlogs']}',
+                    'Sessions',
+                  ),
+                  (
+                    Icons.route_outlined,
+                    activity?.tracked == 0
+                        ? '—'
+                        : formatWalkDistance(
+                            activity?.meters ??
+                                (impact['distanceMeters'] as num).toDouble(),
+                          ),
+                    'Distance',
+                  ),
+                  (
+                    Icons.shopping_bag_outlined,
+                    weight == null ? '—' : '${kgLabel(weight.$1)} kg',
+                    weight?.$2 ?? 'Litter weight',
+                  ),
+                  (
+                    Icons.cloud_outlined,
+                    carbon == null
+                        ? 'No estimate'
+                        : '${kgLabel(carbon.abs())} kg',
+                    carbon != null && carbon < 0
+                        ? 'Potential CO₂e increase'
+                        : 'Potential CO₂e savings',
+                  ),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 2,
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(icon, color: context.colors.primary),
+                        const SizedBox(height: 4),
+                        Text(
+                          value,
+                          style: AppText.label,
+                          textAlign: TextAlign.center,
+                        ),
+                        Text(
+                          label,
+                          style: AppText.caption.copyWith(fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+        if (totals.hasError)
+          TextButton(
+            onPressed: () => ref.invalidate(totalsProvider),
+            child: const Text('Retry activity totals'),
+          ),
       ],
     );
   }

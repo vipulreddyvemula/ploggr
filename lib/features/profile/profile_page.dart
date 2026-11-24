@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../routes/app_routes.dart';
 import '../../routes/auth_navigation.dart';
 import '../../core/network/protected_api.dart';
+import '../../core/theme/theme_preference.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/bottom_navigation.dart';
@@ -45,63 +46,197 @@ class ProfilePage extends ConsumerWidget {
     return AppPage(
       title: 'Profile',
       root: live,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+      tabHeader: live
+          ? TabHeader(
+              action: IconButton(
+                tooltip: 'Settings',
+                onPressed: () => openPage(context, AppRoutes.settings),
+                icon: const Icon(Icons.settings_outlined),
+              ),
+            )
+          : null,
       bottomNavigation: const BottomNavBar(),
       child: Column(
         children: [
-          Row(
+          Stack(
+            alignment: Alignment.centerLeft,
             children: [
               if (live)
-                CircleAvatar(
-                  radius: 34,
-                  backgroundColor: context.colors.primaryContainer,
-                  child: Text(
-                    name.characters.first.toUpperCase(),
-                    style: AppText.hero.copyWith(color: context.colors.primary),
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: FractionallySizedBox(
+                      widthFactor: .42,
+                      child: Image.asset(
+                        'assets/images/brand/profile-park.png',
+                        fit: BoxFit.contain,
+                        alignment: Alignment.bottomRight,
+                        excludeFromSemantics: true,
+                      ),
+                    ),
                   ),
-                )
-              else
-                const PersonAvatar(index: 3, radius: 34),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+              Padding(
+                padding: EdgeInsets.only(
+                  right: live
+                      ? MediaQuery.sizeOf(context).width.clamp(0, 600) * .28
+                      : 0,
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      name,
-                      style: AppText.heading,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    if (live)
+                      Semantics(
+                        button: true,
+                        child: Tooltip(
+                          message: 'Edit profile',
+                          child: InkWell(
+                            borderRadius: AppRadius.pill,
+                            onTap: () => _edit(
+                              context,
+                              ref,
+                              profile?['name'] ?? '',
+                              live: true,
+                            ),
+                            child: Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 29,
+                                  backgroundColor:
+                                      context.colors.primaryContainer,
+                                  child: Text(
+                                    name.characters.firstOrNull
+                                            ?.toUpperCase() ??
+                                        'P',
+                                    style: AppText.title.copyWith(
+                                      color: context.colors.primary,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: CircleAvatar(
+                                    radius: 9,
+                                    backgroundColor: context.colors.primary,
+                                    child: Icon(
+                                      Icons.edit,
+                                      size: 11,
+                                      color: context.colors.onPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      const PersonAvatar(index: 3, radius: 34),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: AppText.heading,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            live
+                                ? ((email ?? '').endsWith('@identity.invalid')
+                                      ? 'Connected account'
+                                      : email ?? '')
+                                : '@${name.split(' ').first.toLowerCase()}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.caption,
+                          ),
+                          if (live)
+                            FieldData('progress?period=all', (data) {
+                              final totals = data['totals'];
+                              final verified = totals['verifiedCleanups'];
+                              return Text(
+                                "${pointsLabel(totals['points'])} XP · $verified verified ${verified == 1 ? 'cleanup' : 'cleanups'}",
+                                style: AppText.caption.copyWith(
+                                  color: context.colors.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              );
+                            }),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      live
-                          ? ((email ?? '').endsWith('@identity.invalid')
-                                ? 'Connected account'
-                                : email ?? '')
-                          : '@${name.split(' ').first.toLowerCase()}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.caption,
-                    ),
+                    if (!live)
+                      IconButton(
+                        tooltip: 'Edit profile',
+                        onPressed: () => _edit(context, ref, name),
+                        icon: const Icon(Icons.edit_outlined, size: 22),
+                      ),
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Edit profile',
-                onPressed: () => _edit(
-                  context,
-                  ref,
-                  live ? (profile?['name'] ?? '') : name,
-                  live: live,
-                ),
-                icon: const Icon(Icons.edit_outlined, size: 22),
-              ),
             ],
           ),
-          const SizedBox(height: 24),
-          if (live)
-            const ProgressPanel()
-          else
+          const SizedBox(height: 12),
+
+          if (live) ...[
+            const AccountStats(),
+            SectionTitle(
+              'Your Achievements',
+              trailing: TextButton(
+                onPressed: () => openPage(context, AppRoutes.badges),
+                child: const Text('View all'),
+              ),
+            ),
+            RewardData('badges', (rows) {
+              final badges = (rows as List).cast<Map>();
+              if (badges.isEmpty) {
+                return const AppNotice(
+                  'Achievements will appear here when available.',
+                );
+              }
+              final ordered = [
+                ...badges.where((b) => b['earned'] != null),
+                ...badges.where((b) => b['earned'] == null),
+              ];
+              return AdaptiveTiles(
+                minWidth: 68,
+                spacing: 4,
+                children: [
+                  for (final b in ordered.take(4))
+                    Semantics(
+                      button: true,
+                      label: b['earned'] == null ? 'Locked' : 'Earned',
+                      child: InkWell(
+                        onTap: () => openPage(context, AppRoutes.badges),
+                        child: Column(
+                          children: [
+                            BadgeArt(
+                              size: 40,
+                              locked: b['earned'] == null,
+                              gold: b['earned'] != null,
+                              icon: b['earned'] == null
+                                  ? Icons.lock_outline
+                                  : Icons.eco,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              b['name'],
+                              textAlign: TextAlign.center,
+                              style: AppText.caption,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ] else
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -130,9 +265,8 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ],
             ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
           if (live) ...[
-            const SectionTitle('Your activity'),
             EcoCard(
               padding: EdgeInsets.zero,
               child: Column(
@@ -142,11 +276,13 @@ class ProfilePage extends ConsumerWidget {
                   ListTile(
                     leading: const Icon(Icons.workspace_premium_outlined),
                     title: const Text('My badges'),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => openPage(context, AppRoutes.badges),
                   ),
                   ListTile(
                     leading: const Icon(Icons.leaderboard_outlined),
                     title: const Text('Leaderboard'),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => openPage(context, AppRoutes.leaderboard),
                   ),
                   if (profile?['moderator'] == true)
@@ -158,7 +294,7 @@ class ProfilePage extends ConsumerWidget {
                 ],
               ),
             ),
-            const SectionTitle('Account and support'),
+            const SizedBox(height: 8),
           ],
           EcoCard(
             padding: EdgeInsets.zero,
@@ -180,6 +316,17 @@ class ProfilePage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
+          if (live)
+            EcoCard(
+              padding: EdgeInsets.zero,
+              child: ExpansionTile(
+                key: const PageStorageKey('profile-progress'),
+                leading: const Icon(Icons.insights_outlined),
+                title: const Text('Impact details'),
+                childrenPadding: const EdgeInsets.all(12),
+                children: const [ProgressPanel()],
+              ),
+            ),
           if (!live)
             const PreviewNote(
               text: 'Preview profile · your small steps make a big difference',
@@ -192,7 +339,15 @@ class ProfilePage extends ConsumerWidget {
   Widget _row(BuildContext context, ProfileSection section, String title) =>
       ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-        leading: Icon(section.icon, size: 22, color: context.colors.onSurface),
+        leading: Icon(section.icon, size: 22, color: context.colors.primary),
+        subtitle: section == ProfileSection.activity
+            ? const Text(
+                'Your Plog sessions and cleanups',
+                style: AppText.caption,
+              )
+            : section == ProfileSection.saved
+            ? const Text('Litter you’ve reported', style: AppText.caption)
+            : null,
         title: Text(title, style: AppText.label.copyWith(fontSize: 14)),
         trailing: const Icon(Icons.chevron_right_rounded, size: 21),
         onTap: () => openPage(context, section.path),
@@ -497,6 +652,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
   );
   Widget _settings() {
     final live = ref.watch(authModeProvider) == AuthMode.live;
+    final theme = ref.watch(themePreferenceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -518,6 +674,27 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
             ),
           ),
         const SizedBox(height: 16),
+        SwitchListTile(
+          secondary: Icon(
+            Icons.dark_mode_outlined,
+            color: context.colors.primary,
+          ),
+          title: const Text('Dark mode'),
+          value: theme.mode == ThemeMode.dark,
+          onChanged: theme.saving
+              ? null
+              : (enabled) async {
+                  final saved = await ref
+                      .read(themePreferenceProvider.notifier)
+                      .setDarkMode(enabled);
+                  if (!saved && mounted) {
+                    toast(
+                      context,
+                      'Could not save your appearance for the next launch.',
+                    );
+                  }
+                },
+        ),
         ListTile(
           leading: Icon(Icons.network_check, color: context.colors.primary),
           title: const Text('Connection check'),
@@ -556,8 +733,6 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
               : () => switchPage(context, AppRoutes.login),
         ),
         const SizedBox(height: 20),
-        if (!live)
-          const PreviewNote(text: 'Appearance follows your device theme.'),
       ],
     );
   }

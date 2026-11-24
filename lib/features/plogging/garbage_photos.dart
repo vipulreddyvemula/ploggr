@@ -434,7 +434,7 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
                 ),
           actions: [
             if (widget.editing && selected != null) ...[
-              TextButton(
+              OutlinedButton.icon(
                 onPressed: busy
                     ? null
                     : () async {
@@ -443,19 +443,28 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
                           await add(gallery: gallery, replacing: selected);
                         }
                       },
-                child: const Text('Retake or replace'),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Retake or replace'),
               ),
-              TextButton(
+              OutlinedButton.icon(
                 onPressed: busy ? null : () => remove(selected),
-                child: const Text('Remove photo'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.colors.error,
+                ),
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Remove photo'),
               ),
             ],
           ],
         ),
         if (widget.editing && ids.length < 6) ...[
           if (widget.inlineAdd)
-            PrimaryButton('Add pickup', onPressed: busy ? null : () => add()),
-          TextButton.icon(
+            PrimaryButton(
+              'Add pickup',
+              icon: Icons.add_a_photo_outlined,
+              onPressed: busy ? null : () => add(),
+            ),
+          OutlinedButton.icon(
             onPressed: busy ? null : () => add(gallery: true),
             icon: const Icon(Icons.photo_library_outlined),
             label: const Text('Choose from gallery'),
@@ -464,7 +473,7 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
         if (widget.editing &&
             selected != null &&
             !observations.any((o) => o['photo'] == selected))
-          TextButton(
+          OutlinedButton.icon(
             onPressed: busy
                 ? null
                 : () async {
@@ -475,7 +484,8 @@ class GarbagePhotosState extends ConsumerState<GarbagePhotos> {
                       if (mounted) await refresh();
                     }
                   },
-            child: const Text('Link pickup to a reported spot'),
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('Link pickup to a reported spot'),
           ),
         if (ids.isEmpty)
           const Text(

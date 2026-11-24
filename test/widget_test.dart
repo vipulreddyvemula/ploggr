@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ploggr/app.dart';
+import 'package:ploggr/core/theme/theme_preference.dart';
 import 'package:ploggr/routes/app_router.dart';
 import 'package:ploggr/routes/app_routes.dart';
 import 'package:ploggr/features/onboarding/onboarding_page.dart';
@@ -52,6 +53,8 @@ Future<ProviderContainer> openApp(
     overrides: [
       authModeProvider.overrideWithValue(AuthMode.preview),
       initialLocationProvider.overrideWithValue(route),
+      if (brightness == Brightness.dark)
+        initialThemeModeProvider.overrideWithValue(ThemeMode.dark),
     ],
   );
   await tester.pumpWidget(
@@ -61,7 +64,6 @@ Future<ProviderContainer> openApp(
         data: MediaQueryData(
           size: size,
           textScaler: TextScaler.linear(textScale),
-          platformBrightness: brightness,
         ),
         child: const PloggrApp(),
       ),

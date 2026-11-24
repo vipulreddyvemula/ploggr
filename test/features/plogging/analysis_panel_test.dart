@@ -1,11 +1,123 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:ploggr/core/network/protected_api.dart';
 import 'package:ploggr/features/community/field_data.dart';
 import 'package:ploggr/features/plogging/analysis_panel.dart';
 import 'package:ploggr/shared/widgets/ploggr_ui.dart';
 
+class _DisposalApi extends Fake implements ProtectedApi {
+  Object? saved;
+
+  @override
+  Future<T?> request<T>(
+    String method,
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    CancelToken? cancelToken,
+    ResponseType? responseType,
+    ProgressCallback? onSendProgress,
+    bool idempotent = false,
+    String? recordingDevice,
+  }) async {
+    expect(method, 'PUT');
+    expect(path, 'plogs/pickup/disposal');
+    saved = data;
+    return null;
+  }
+}
+
 void main() {
+  testWidgets('saving weighed disposal refreshes CO₂e views immediately', (
+    tester,
+  ) async {
+    const paths = [
+      'plogs/pickup/analysis',
+      'progress?period=all',
+      'leaderboard?period=week',
+    ];
+    final reads = <String, int>{};
+    final api = _DisposalApi();
+    final container = ProviderContainer(
+      overrides: [
+        protectedApiProvider.overrideWithValue(api),
+        for (final path in paths)
+          fieldData(path).overrideWith((_) async {
+            reads.update(path, (count) => count + 1, ifAbsent: () => 1);
+            if (path != paths.first) return null;
+            return {
+              'state': 'ready',
+              'result': {
+                'items': [
+                  {
+                    'label': 'Glass jar',
+                    'material': 'Glass',
+                    'type': 'Jar',
+                    'count': 1,
+                    'certain': true,
+                    'photoIds': [],
+                  },
+                ],
+              },
+            };
+          }),
+        fieldData('impact/factors').overrideWith(
+          (_) async => [
+            for (final pathway in ['Landfill', 'Recycling'])
+              {
+                'material': 'Glass',
+                'region': 'Test region',
+                'version': 'v1',
+                'pathway': pathway,
+              },
+          ],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    for (final path in paths.skip(1)) {
+      container.listen(fieldData(path), (_, _) {});
+    }
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: AppPage(title: 'Plog details', child: AnalysisPanel('pickup')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> tap(String text) async {
+      final target = find.text(text).last;
+      await tester.ensureVisible(target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    expect(
+      find.textContaining('No CO₂e estimate is available'),
+      findsOneWidget,
+    );
+    await tap('Add weighed material');
+    await tap('Material and factor region');
+    await tap('Glass · Test region · v1');
+    await tester.enterText(find.byType(TextField), '2');
+    await tap('Expected disposal without cleanup');
+    await tap('Landfill');
+    await tap('Actual disposal');
+    await tap('Recycling');
+    await tap('Save disposal');
+
+    expect(api.saved, containsPair('massKg', 2.0));
+    expect(find.text('Disposal details'), findsNothing);
+    for (final path in paths) {
+      expect(reads[path], 2, reason: path);
+    }
+  });
+
   testWidgets(
     'shows potential ranges, pending points and prediction reporting',
     (tester) async {

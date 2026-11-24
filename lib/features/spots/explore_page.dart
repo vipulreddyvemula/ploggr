@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../routes/app_routes.dart';
 import '../../shared/widgets/bottom_navigation.dart';
+import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/evidence_review.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../community/field_data.dart';
@@ -56,9 +57,10 @@ class _ExploreState extends ConsumerState<ExplorePage> {
   RouteFix? origin;
   RouteFix? focus;
   String? selected, notice;
-  String area = 'Choose area';
+  String area = 'Search location';
   Set<String> overlapping = {};
   int cameraKey = 0, locationRequest = 0, visibleCount = 10;
+  bool originIsDevice = false;
   bool locating = false, initialized = false, heatmap = false;
   bool listView = !supportsSpotMap, mapFailed = false;
   Timer? viewportDebounce, refreshTimer, initialAreaTimer;
@@ -140,7 +142,11 @@ class _ExploreState extends ConsumerState<ExplorePage> {
       cached = await source.cachedPoint();
       if (!mounted || version != locationRequest) return;
       if (cached != null) {
-        showArea((point: cached, name: 'Last known area'), keepNotice: true);
+        showArea(
+          (point: cached, name: 'Last known area'),
+          deviceLocation: true,
+          keepNotice: true,
+        );
       } else {
         final saved = await rememberedArea(ref.read(plogDraftsProvider));
         if (!mounted || version != locationRequest) return;
@@ -155,19 +161,29 @@ class _ExploreState extends ConsumerState<ExplorePage> {
     try {
       final current = await source.currentIfPermitted();
       if (mounted && version == locationRequest && current != null) {
-        showArea((point: current, name: 'Near me'), keepNotice: true);
+        showArea(
+          (point: current, name: 'Near me'),
+          deviceLocation: true,
+          keepNotice: true,
+        );
       }
     } catch (_) {
       // Keep showing the last known or chosen area while a fresh fix is unavailable.
     }
   }
 
-  void showArea(ChosenPlace place, {Spot? report, bool keepNotice = false}) {
+  void showArea(
+    ChosenPlace place, {
+    Spot? report,
+    bool keepNotice = false,
+    bool deviceLocation = false,
+  }) {
     viewportDebounce?.cancel();
     setState(() {
       initialized = true;
       if (!keepNotice) notice = null;
       origin = focus = place.point;
+      originIsDevice = deviceLocation;
       area = place.name;
       selected = report?.id;
       overlapping = {};
@@ -208,7 +224,7 @@ class _ExploreState extends ConsumerState<ExplorePage> {
         showArea((
           point: (latitude: fix.latitude, longitude: fix.longitude),
           name: 'Near me',
-        ));
+        ), deviceLocation: true);
       }
     } catch (error) {
       if (!mounted || version != locationRequest) return;
@@ -217,7 +233,12 @@ class _ExploreState extends ConsumerState<ExplorePage> {
         cached = await source.cachedPoint();
       } catch (_) {}
       if (!mounted || version != locationRequest) return;
-      if (cached != null) showArea((point: cached, name: 'Last known area'));
+      if (cached != null) {
+        showArea((
+          point: cached,
+          name: 'Last known area',
+        ), deviceLocation: true);
+      }
       setState(() {
         initialized = true;
         notice = cached != null
@@ -324,18 +345,88 @@ class _ExploreState extends ConsumerState<ExplorePage> {
     final cameraBounds = filters.radius != null && focus != null
         ? _cameraBounds(_around(focus!, filters.radius!))
         : null;
+    final controlStyle = OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      shape: const StadiumBorder(),
+      backgroundColor: context.colors.surface,
+      side: BorderSide(color: context.colors.outlineVariant),
+    );
     return AppPage(
       title: 'Litter Map',
       root: true,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       bottomNavigation: const BottomNavBar(),
-      actions: [
-        IconButton(
-          tooltip: 'Refresh spots',
-          onPressed: initialized ? () => ref.invalidate(provider) : null,
-          icon: const Icon(Icons.refresh),
+      tabHeader: TabHeader(
+        title: 'Litter Map',
+        subtitle: 'Discover litter spots and cleanups nearby',
+        action: PopupMenuButton<String>(
+          tooltip: 'Map information and actions',
+          icon: const Icon(Icons.info_outline),
+          onSelected: (v) {
+            if (v == 'refresh') ref.invalidate(provider);
+            if (v == 'recenter') {
+              interact();
+              setState(() {
+                focus = origin;
+                cameraKey++;
+              });
+            }
+          },
+          itemBuilder: (_) => [
+            for (final status in [
+              SpotMapStatus.open,
+              SpotMapStatus.verification,
+              SpotMapStatus.collected,
+            ])
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Row(
+                  children: [
+                    Icon(Icons.location_pin, color: spotMarkerColor(status)),
+                    const SizedBox(width: 6),
+                    Text(
+                      status.label,
+                      style: TextStyle(color: context.colors.onSurface),
+                    ),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            if (origin != null && !listView)
+              const PopupMenuItem(value: 'recenter', child: Text('Recenter')),
+            const PopupMenuItem(value: 'refresh', child: Text('Refresh spots')),
+          ],
         ),
-      ],
+      ),
+      bottomAction: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          onPressed: () => openPage(context, AppRoutes.scan),
+          child: const Row(
+            children: [
+              Icon(Icons.add_a_photo_outlined, size: 28),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Scan Litter', style: AppText.heading),
+                    Text(
+                      'Report a new litter spot on the map',
+                      style: AppText.caption,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -343,6 +434,12 @@ class _ExploreState extends ConsumerState<ExplorePage> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    shape: const StadiumBorder(),
+                    backgroundColor: context.colors.surface,
+                    side: BorderSide(color: context.colors.outlineVariant),
+                  ),
                   onPressed: pickArea,
                   icon: const Icon(Icons.search),
                   label: Text(
@@ -353,9 +450,9 @@ class _ExploreState extends ConsumerState<ExplorePage> {
                 ),
               ),
               const SizedBox(width: 8),
-              TextButton.icon(
+              IconButton.outlined(
+                tooltip: 'Find near me',
                 onPressed: locating ? null : locate,
-                label: const Text('Find near me'),
                 icon: locating
                     ? const SizedBox.square(
                         dimension: 18,
@@ -367,7 +464,10 @@ class _ExploreState extends ConsumerState<ExplorePage> {
           ),
           const SizedBox(height: 6),
           FilterTabs(
-            labels: const ['Active litter', 'Collected'],
+            labels: [
+              'Active Litter${!collecting && page != null ? ' (${spots.length}${page.truncated ? '+' : ''})' : ''}',
+              'Cleaned${collecting && page != null ? ' (${spots.length}${page.truncated ? '+' : ''})' : ''}',
+            ],
             selected: collecting ? 1 : 0,
             onChanged: (index) {
               applyFilters((
@@ -381,11 +481,13 @@ class _ExploreState extends ConsumerState<ExplorePage> {
               ));
             },
           ),
-          Wrap(
-            spacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(height: 6),
+          AdaptiveTiles(
+            minWidth: 85,
+            spacing: 5,
             children: [
-              TextButton.icon(
+              OutlinedButton.icon(
+                style: controlStyle,
                 onPressed: () async {
                   interact();
                   final next = await showModalBottomSheet<SpotFilters>(
@@ -401,25 +503,34 @@ class _ExploreState extends ConsumerState<ExplorePage> {
                 label: const Text('Filters'),
               ),
               if (supportsSpotMap)
-                TextButton.icon(
+                OutlinedButton.icon(
+                  style: controlStyle,
                   onPressed: () {
                     interact();
                     setState(() => listView = !listView);
                   },
                   icon: Icon(listView ? Icons.map_outlined : Icons.list),
-                  label: Text(listView ? 'Show map' : 'Show list'),
+                  label: Text(listView ? 'Map view' : 'List'),
                 ),
               if (!listView && !collecting)
-                FilterChip(
+                OutlinedButton.icon(
+                  style: heatmap
+                      ? controlStyle.copyWith(
+                          backgroundColor: WidgetStatePropertyAll(
+                            context.colors.primaryContainer,
+                          ),
+                        )
+                      : controlStyle,
+                  icon: const Icon(Icons.layers_outlined, size: 18),
                   label: const Text('Heatmap'),
-                  selected: heatmap,
-                  onSelected: (value) {
+                  onPressed: () {
                     interact();
-                    setState(() => heatmap = value);
+                    setState(() => heatmap = !heatmap);
                   },
                 ),
             ],
           ),
+          const SizedBox(height: 8),
           if (filters.category != null ||
               filters.radius != null ||
               filters.ageDays != null ||
@@ -448,10 +559,10 @@ class _ExploreState extends ConsumerState<ExplorePage> {
               child: ClipRRect(
                 borderRadius: AppRadius.card,
                 child: SpotMap(
-                  height: (MediaQuery.sizeOf(context).height * .41).clamp(
-                    176.0,
-                    425.0,
-                  ),
+                  height:
+                      (MediaQuery.sizeOf(context).height *
+                              (first == null ? .44 : .32))
+                          .clamp(176.0, 425.0),
                   reports: spots,
                   selected: selected,
                   heatmap: heatmap,
@@ -483,54 +594,13 @@ class _ExploreState extends ConsumerState<ExplorePage> {
                 ),
               ),
             ),
-          if (!listView && !mapFailed && origin != null)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {
-                  interact();
-                  setState(() {
-                    focus = origin;
-                    cameraKey++;
-                  });
-                },
-                icon: const Icon(Icons.center_focus_strong_outlined, size: 18),
-                label: const Text('Recenter'),
+          if (!listView && heatmap && !mapFailed)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Blue to red · lower to higher litter density',
+                style: AppText.caption,
               ),
-            ),
-          if (!listView && !mapFailed)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: heatmap
-                  ? const Text(
-                      'Blue to red · lower to higher litter density',
-                      style: AppText.caption,
-                    )
-                  : Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        for (final status
-                            in collecting
-                                ? [SpotMapStatus.collected]
-                                : [
-                                    SpotMapStatus.open,
-                                    SpotMapStatus.verification,
-                                  ])
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.circle,
-                                color: spotMarkerColor(status),
-                                size: 13,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(status.label, style: AppText.caption),
-                            ],
-                          ),
-                      ],
-                    ),
             ),
           if (mapFailed && !listView)
             AppNotice(
@@ -586,6 +656,7 @@ class _ExploreState extends ConsumerState<ExplorePage> {
                 feed: false,
                 showDirections: !listView,
                 quickDirections: listView,
+                distanceFromArea: !originIsDevice,
               ),
             ),
           if (listView && spots.length > visibleCount)
@@ -975,10 +1046,11 @@ class _ReportCard extends ConsumerWidget {
     required this.feed,
     required this.showDirections,
     this.quickDirections = false,
+    this.distanceFromArea = false,
   });
   final Spot spot;
   final RouteFix? location;
-  final bool feed, showDirections, quickDirections;
+  final bool feed, showDirections, quickDirections, distanceFromArea;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1000,15 +1072,37 @@ class _ReportCard extends ConsumerWidget {
       children: [
         Text('${spot.category} litter', style: AppText.label),
         const SizedBox(height: 4),
-        Text(
-          [
-            status,
-            if (spot.place.isNotEmpty) spot.place,
-            if (distance != null) '${formatWalkDistance(distance)} away',
-          ].join(' · '),
-          style: AppText.caption,
+        if (distance != null || spot.place.isNotEmpty)
+          Text(
+            [
+              if (spot.place.isNotEmpty &&
+                  (!showDirections || distance == null))
+                spot.place,
+              if (distance != null)
+                distanceFromArea && distance < 1
+                    ? 'At selected location'
+                    : '${formatWalkDistance(distance)} ${distanceFromArea ? 'from selected area' : 'away'}',
+            ].join(' · '),
+            style: AppText.caption,
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: context.colors.primaryContainer,
+              borderRadius: AppRadius.pill,
+            ),
+            child: Text(
+              status,
+              style: AppText.caption.copyWith(
+                color: context.colors.onPrimaryContainer,
+              ),
+            ),
+          ),
         ),
-        if (spot.notes.isNotEmpty)
+        if (spot.notes.isNotEmpty && !showDirections)
           Text(
             spot.notes,
             maxLines: 3,
@@ -1021,41 +1115,37 @@ class _ReportCard extends ConsumerWidget {
       onTap: open,
       padding: const EdgeInsets.all(12),
       child: showDirections
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+          ? LayoutBuilder(
+              builder: (context, box) {
+                final nav = OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                  ),
+                  onPressed: () => _openDirections(context, spot),
+                  icon: const Icon(Icons.near_me_outlined, size: 17),
+                  label: const Text('Navigate'),
+                );
+                final inline =
+                    box.maxWidth >=
+                    300 * MediaQuery.textScalerOf(context).scale(14) / 14;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    SpotPhotoTile(spot.id, 0, small: true),
-                    const SizedBox(width: 12),
-                    Expanded(child: description),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  children: [
-                    TextButton(
-                      onPressed: open,
-                      child: const Text('View report'),
+                    Row(
+                      children: [
+                        if (spot.photoCount > 0) ...[
+                          SpotPhotoTile(spot.id, 0, small: true),
+                          const SizedBox(width: 9),
+                        ],
+                        Expanded(child: description),
+                        if (inline) nav,
+                      ],
                     ),
-                    OutlinedButton.icon(
-                      onPressed: () => _openDirections(context, spot),
-                      icon: const Icon(Icons.directions_outlined),
-                      label: const Text('Directions'),
-                    ),
-                    if (spot.status == 'open')
-                      FieldAction(
-                        'Plog this spot',
-                        () => _startAtSpot(context, ref, spot),
-                        icon: Icons.directions_walk,
-                      ),
+                    if (!inline) nav,
                   ],
-                ),
-              ],
+                );
+              },
             )
           : feed
           ? Column(
@@ -1063,12 +1153,12 @@ class _ReportCard extends ConsumerWidget {
               children: [
                 description,
                 const SizedBox(height: 10),
-                SpotPhotoTile(spot.id, 0),
+                if (spot.photoCount > 0) SpotPhotoTile(spot.id, 0),
               ],
             )
           : Row(
               children: [
-                SpotPhotoTile(spot.id, 0, small: true),
+                if (spot.photoCount > 0) SpotPhotoTile(spot.id, 0, small: true),
                 const SizedBox(width: 12),
                 Expanded(child: description),
                 if (quickDirections)
@@ -1115,7 +1205,7 @@ class OpenSightings extends ConsumerWidget {
                 child: _ReportCard(
                   spot: s,
                   location: null,
-                  feed: false,
+                  feed: true,
                   showDirections: false,
                 ),
               ),

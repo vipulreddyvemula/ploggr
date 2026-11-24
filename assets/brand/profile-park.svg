@@ -1,0 +1,19 @@
+<!-- Original profile vignette, drawn from the project owner's Ploggr reference. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="116" viewBox="0 0 260 116">
+<defs><linearGradient id="hill" x1="0" y1="0" x2="1" y2=".5"><stop stop-color="#e6f4d6" stop-opacity="0"/><stop offset=".4" stop-color="#d9efbf"/><stop offset="1" stop-color="#9dcc6c"/></linearGradient><linearGradient id="meadow" x2=".7" y2="1"><stop stop-color="#a8d679"/><stop offset="1" stop-color="#ddf0cb"/></linearGradient></defs>
+<g fill="#e8f4dd"><path d="M11 39q3-8 12-9 2-12 17-11 7-18 23-14 13 3 15 15 12-3 18 9 13 0 16 10z"/><path d="M210 30q2-9 12-9 8-12 17-5 10-2 17 14z"/></g>
+<path fill="url(#hill)" d="M0 110Q83 49 145 60q71-8 115-31v87Q129 71 0 110Z"/>
+<g fill="#89bd52"><path d="M169 62q-15 3-18-9-12-3-6-16-3-11 8-14 1-13 13-12 7-12 18-5 11 4 10 16 14 6 8 17 11 19-13 22z"/><path d="M39 77q-6 0-6-5-6-3 0-9-2-6 5-8 3-8 8-2 5 1 4 7 6 5 0 10 1 9-11 7z" opacity=".37"/></g>
+<g fill="none" stroke="#427c38" stroke-linecap="round"><path d="M174 79V24m0 25-11-12m11 4 12-13m-12 26 14-9" stroke-width="2.4"/><path d="M41 82V62" opacity=".4"/></g>
+<path fill="url(#meadow)" d="M3 109q93-48 168-39 45 4 89 22v19Q125 62 3 109Z"/>
+<g fill="#195d2a">
+<path d="M103 28q-2-7 5-11 6-3 12 2l1 5 4 2-3 2-1 6-4 1-1 5-10-4 1-4-6-1z"/>
+<path d="m110 34 7 3-3 13-8 10-14-1 5-19 5-6z"/>
+<path d="m96 55 11 2-3 16 6 13 5 2-1 2-10-1-8-17-1-7-8 9-10 9 1 3-4 2-4-6 13-14z"/>
+<path d="m116 38 6 10 17 4-1 3-20-3-8-9z"/>
+<path d="M139 59q-6 0-9 9l-4 13q-1 8 7 9l22-1q7-2 4-10l-6-14q-3-6-8-6l3-5-10-1z"/>
+</g>
+<path fill="#64a532" d="M100 38q5-7 11-5l3 4-7 20-13 1z"/>
+<g fill="none" stroke="#d9efba" stroke-width="2" stroke-linecap="round"><path d="m138 72 3-5 4 5m2 2 3 6h-6m-4 0h-6l3-6"/></g>
+<g fill="#599c30"><path d="M214 89q-10-22-6-41 16 17 12 39zm7-2q0-32 26-50-4 34-26 50zm0 3q12-17 33-16-13 19-33 16z"/></g>
+</svg>

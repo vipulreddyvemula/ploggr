@@ -22,7 +22,6 @@ class HomePage extends ConsumerWidget {
     final live = ref.watch(authModeProvider) == AuthMode.live;
     final impact = live ? null : ref.watch(impactProvider);
     final session = live ? null : ref.watch(sessionProvider);
-    final totals = live ? ref.watch(totalsProvider).value : null;
     final livePhase = live
         ? ref.watch(activeTrackProvider.select((s) => s.phase))
         : TrackPhase.idle;
@@ -48,105 +47,139 @@ class HomePage extends ConsumerWidget {
       openPage(context, AppRoutes.session);
     }
 
-    final start = PrimaryButton(
-      resume ? 'Resume Plog Session' : 'Start Plog Session',
-      icon: Icons.directions_run_rounded,
-      onPressed: openPlog,
-    );
-    return Scaffold(
-      bottomNavigationBar: const BottomNavBar(),
-      body: SafeArea(
-        bottom: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+    return AppPage(
+      title: 'Home',
+      root: true,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+      bottomNavigation: const BottomNavBar(),
+      tabHeader: TabHeader(
+        action: IconButton(
+          tooltip: 'My Activity',
+          icon: const Icon(Icons.history_rounded),
+          onPressed: () => openPage(context, AppRoutes.activity),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            live
+                ? (name?.trim().isNotEmpty == true ? 'Hi, $name' : 'Welcome')
+                : 'Hi, $name! 👋',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.title,
+          ),
+          const Text('Plog today. Change tomorrow.', style: AppText.body),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: AppRadius.card,
+            child: Stack(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        live
-                            ? (name?.trim().isNotEmpty == true
-                                  ? 'Hi, $name'
-                                  : 'Ploggr')
-                            : 'Hi, $name! 👋',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.title.copyWith(fontSize: 23),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: live ? 'My Activity' : 'Notifications',
-                      onPressed: live
-                          ? () => openPage(context, AppRoutes.activity)
-                          : () => previewNotice(
-                              context,
-                              'A little green inspiration',
-                              'Your next clean-up is waiting! Explore nearby events and join a sample community drive. Notifications are a preview.',
-                            ),
-                      icon: Icon(
-                        live
-                            ? Icons.history_rounded
-                            : Icons.notifications_none_rounded,
-                      ),
-                    ),
-                  ],
+                const Positioned.fill(
+                  child: ColoredBox(color: Color(0xff195828)),
                 ),
-                if (live) ...[
-                  if (resume)
-                    const AppNotice(
-                      'Pick up where you left off on this device.',
-                    ),
-                  start,
-                  Wrap(
-                    spacing: AppSpace.sm,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => openPage(context, AppRoutes.report),
-                        icon: const Icon(Icons.add_location_alt_outlined),
-                        label: const Text('Report litter'),
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FractionallySizedBox(
+                      widthFactor: .61,
+                      heightFactor: 1,
+                      child: Image.asset(
+                        'assets/images/illustrations/plogging.png',
+                        fit: BoxFit.cover,
+                        alignment: const Alignment(.16, .3),
+                        excludeFromSemantics: true,
                       ),
-                      OutlinedButton.icon(
-                        onPressed: () => switchPage(context, AppRoutes.map),
-                        icon: const Icon(Icons.map_outlined),
-                        label: const Text('Explore'),
+                    ),
+                  ),
+                ),
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Color(0xff164e27),
+                          Color(0xff195828),
+                          Color(0x00195826),
+                        ],
+                        stops: [0, .43, .70],
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FractionallySizedBox(
+                        widthFactor: .58,
+                        child: Text(
+                          resume
+                              ? 'Ready to continue your Plog?'
+                              : 'Ready to make your surroundings cleaner?',
+                          style: AppText.heading.copyWith(
+                            color: Colors.white,
+                            height: 1.16,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.forest,
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: openPlog,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: Text(
+                          resume ? 'Resume Plog Session' : 'Start Plog Session',
+                        ),
                       ),
                     ],
                   ),
-                ],
-                const SizedBox(height: 10),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          AdaptiveTiles(
+            minWidth: 136,
+            children: [
+              for (final (label, detail, icon, route) in [
+                (
+                  'Scan Litter',
+                  'Report litter with photo & location',
+                  Icons.add_a_photo_outlined,
+                  AppRoutes.scan,
+                ),
+                (
+                  'Explore Map',
+                  'Find nearby litter spots & cleanups',
+                  Icons.map_outlined,
+                  AppRoutes.map,
+                ),
+              ])
                 EcoCard(
                   color: context.colors.primaryContainer,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 17,
-                  ),
+                  padding: const EdgeInsets.all(12),
+                  onTap: () => route == AppRoutes.map
+                      ? switchPage(context, route)
+                      : openPage(context, route),
                   child: Row(
                     children: [
-                      const LeafSprig(width: 73, height: 98),
-                      const SizedBox(width: 10),
+                      Icon(icon, color: context.colors.primary, size: 29),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Your Impact', style: AppText.label),
-                            const SizedBox(height: 3),
+                            Text(label, style: AppText.label),
                             Text(
-                              live
-                                  ? (totals == null || totals.tracked == 0
-                                        ? '—'
-                                        : formatWalkDistance(totals.meters))
-                                  : '${impact!.kg.toStringAsFixed(1)} kg',
-                              style: AppText.hero,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              live
-                                  ? 'walked on completed Plogs'
-                                  : 'of litter collected',
-                              style: AppText.body,
+                              detail,
+                              style: AppText.caption.copyWith(fontSize: 12),
                             ),
                           ],
                         ),
@@ -154,182 +187,71 @@ class HomePage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                if (live)
-                  const AccountStats()
-                else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: StatTile(
-                          value: '${impact!.sessions}',
-                          label: 'Sessions',
-                          icon: Icons.route_rounded,
-                          onTap: () => openPage(context, AppRoutes.activity),
-                        ),
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: StatTile(
-                          value: '3',
-                          label: 'Challenges',
-                          icon: Icons.emoji_events_outlined,
-                          onTap: () => openPage(context, AppRoutes.challenges),
-                        ),
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: StatTile(
-                          value: '5',
-                          label: 'Badges',
-                          icon: Icons.workspace_premium_rounded,
-                          color: context.goldIcon,
-                          onTap: () => openPage(context, AppRoutes.badges),
-                        ),
-                      ),
-                    ],
-                  ),
-                const SizedBox(height: 15),
-                if (!live) ...[
-                  start,
-                  const SizedBox(height: 10),
-                  PrimaryButton(
-                    'Scan Litter',
-                    icon: Icons.qr_code_scanner_rounded,
-                    onPressed: () => openPage(context, AppRoutes.scan),
-                  ),
-                ],
-                if (live) ...[
-                  const ProgressSnapshot(),
-                  const SectionTitle('Latest report'),
-                  const _LatestReport(),
-                  if (totals != null && totals.count > 0) const _RecentPlog(),
-                ] else ...[
-                  const SectionTitle('Ongoing Challenge'),
-                  EcoCard(
-                    onTap: () => openPage(context, AppRoutes.challenges),
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                            color: context.colors.primaryContainer,
-                            borderRadius: AppRadius.small,
-                          ),
-                          child: Icon(
-                            Icons.directions_run_rounded,
-                            color: context.colors.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Campus Clean-up',
-                                style: AppText.label,
-                              ),
-                              const SizedBox(height: 3),
-                              const Text(
-                                'Collect 20 kg by Nov 22',
-                                style: AppText.caption,
-                              ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: AppRadius.pill,
-                                child: LinearProgressIndicator(
-                                  value: (impact!.kg / 20).clamp(0, 1),
-                                  minHeight: 6,
-                                  backgroundColor:
-                                      context.colors.primaryContainer,
-                                  color: context.colors.primary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${impact.kg.toStringAsFixed(1)} / 20 kg',
-                                style: AppText.caption.copyWith(fontSize: 10),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right_rounded, size: 20),
-                      ],
-                    ),
-                  ),
-                ],
-                const SectionTitle('Quick Actions'),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _quick(
-                      context,
-                      live ? 'My\nreports' : 'Nearby\nClean-ups',
-                      Icons.location_on_outlined,
-                      live ? AppRoutes.saved : AppRoutes.cleanups,
-                    ),
-                    const SizedBox(width: 7),
-                    _quick(
-                      context,
-                      'Litter\nMap',
-                      Icons.map_outlined,
-                      AppRoutes.map,
-                    ),
-                    const SizedBox(width: 7),
-                    _quick(
-                      context,
-                      'Leaderboard',
-                      Icons.emoji_events_outlined,
-                      AppRoutes.leaderboard,
-                    ),
-                    const SizedBox(width: 7),
-                    _quick(
-                      context,
-                      'My\nImpact',
-                      Icons.insights_rounded,
-                      AppRoutes.profile,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (!live) const PreviewNote(),
-              ],
+            ],
+          ),
+          SectionTitle(
+            'Your Impact',
+            trailing: TextButton(
+              onPressed: () => switchPage(context, AppRoutes.profile),
+              child: const Text('View details'),
             ),
           ),
-        ),
+          if (live) ...[
+            const AccountStats(),
+            SectionTitle(
+              'Continue Your Journey',
+              trailing: TextButton(
+                onPressed: () => openPage(context, AppRoutes.activity),
+                child: const Text('View all'),
+              ),
+            ),
+            const _RecentPlog(),
+            const SizedBox(height: 8),
+            const ProgressSnapshot(),
+            const SectionTitle('Latest report'),
+            const _LatestReport(),
+            TextButton.icon(
+              onPressed: () => openPage(context, AppRoutes.report),
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('Report litter'),
+            ),
+          ] else ...[
+            EcoCard(
+              color: context.colors.primaryContainer,
+              child: Text(
+                '${impact!.sessions} sessions · ${impact.kg.toStringAsFixed(1)} kg collected',
+                style: AppText.heading,
+              ),
+            ),
+            const SectionTitle('Ongoing Challenge'),
+            EcoCard(
+              onTap: () => openPage(context, AppRoutes.challenges),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.eco_outlined),
+                title: const Text('Campus Clean-up'),
+                subtitle: Text('${impact.kg.toStringAsFixed(1)} / 20 kg'),
+              ),
+            ),
+            const SectionTitle('Quick Actions'),
+            Wrap(
+              children: [
+                for (final (label, route) in [
+                  ('Nearby Clean-ups', AppRoutes.cleanups),
+                  ('Leaderboard', AppRoutes.leaderboard),
+                ])
+                  TextButton(
+                    onPressed: () => openPage(context, route),
+                    child: Text(label),
+                  ),
+              ],
+            ),
+            const PreviewNote(),
+          ],
+        ],
       ),
     );
   }
-
-  Widget _quick(
-    BuildContext context,
-    String label,
-    IconData icon,
-    String route,
-  ) => Expanded(
-    child: EcoCard(
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 12),
-      onTap: () => openPage(context, route),
-      child: Column(
-        children: [
-          Icon(icon, color: context.colors.primary, size: 23),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 class _LatestReport extends ConsumerWidget {
@@ -397,29 +319,37 @@ class _RecentPlog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final plog = ref.watch(plogHistoryProvider(null)).value?.items.firstOrNull;
-    if (plog == null) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle('Recent Plog'),
-        EcoCard(
-          onTap: () => openPage(context, '${AppRoutes.activity}/${plog.id}'),
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.directions_walk),
-            title: Text(
-              MaterialLocalizations.of(
-                context,
-              ).formatMediumDate(plog.startedAt.toLocal()),
-            ),
-            subtitle: Text(
-              formatWalkSummary(plog.seconds, meters: plog.meters),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-          ),
+    final history = ref.watch(plogHistoryProvider(null));
+    final plog = history.value?.items.firstOrNull;
+    return EcoCard(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        leading: Icon(Icons.directions_run, color: context.colors.primary),
+        title: const Text('Recent Plog', style: AppText.label),
+        subtitle: Text(
+          plog != null
+              ? '${MaterialLocalizations.of(context).formatShortMonthDay(plog.startedAt.toLocal())} · ${formatWalkSummary(plog.seconds, meters: plog.meters)}'
+              : history.isLoading
+              ? 'Loading activity…'
+              : history.hasError
+              ? 'Could not load history. Tap to retry.'
+              : 'Your first completed Plog will appear here.',
+          style: AppText.caption,
         ),
-      ],
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          if (history.hasError) {
+            ref.invalidate(plogHistoryProvider(null));
+            return;
+          }
+          openPage(
+            context,
+            plog == null
+                ? AppRoutes.activity
+                : '${AppRoutes.activity}/${plog.id}',
+          );
+        },
+      ),
     );
   }
 }

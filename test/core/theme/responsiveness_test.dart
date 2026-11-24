@@ -17,8 +17,6 @@ void main() {
         tester,
       ) async {
         tester.platformDispatcher.textScaleFactorTestValue = 2;
-        tester.platformDispatcher.platformBrightnessTestValue = brightness;
-        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         await existing.openApp(
           tester,

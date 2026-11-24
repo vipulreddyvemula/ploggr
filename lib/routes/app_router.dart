@@ -220,6 +220,7 @@ class _SessionGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(sessionControllerProvider).phase;
     final sessions = ref.read(sessionControllerProvider.notifier);
+    if (phase == SessionPhase.restoring) return const BrandedSplash();
     final Widget content = switch (phase) {
       SessionPhase.unavailable => Column(
         mainAxisSize: MainAxisSize.min,

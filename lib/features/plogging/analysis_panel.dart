@@ -195,10 +195,10 @@ class _AnalysisState extends ConsumerState<AnalysisPanel> {
                       : "Photo-estimated weight · ${_range(weights, 'estimateKg', 'kg')}"
                             "${weights.length < items.length ? ' · ${weights.length} of ${items.length} groups' : ''}",
                 ),
-                const SectionTitle('Potential carbon savings'),
+                const SectionTitle('Photo-based CO₂e estimate'),
                 Text(
                   potential.isEmpty
-                      ? 'No supported disposal estimate for these detections.'
+                      ? 'No CO₂e estimate is available for these detections. An estimate needs a reliable weight and a supported material and item type.'
                       : _range(potential, 'avoidedKg', 'kg CO₂e'),
                   style: AppText.label,
                 ),
@@ -423,7 +423,13 @@ class _DisposalState extends ConsumerState<_Disposal> {
                         'actual': actual,
                         'baseline': baseline,
                       },
-                      reload: ['plogs/${widget.id}/analysis'],
+                      reload: [
+                        'plogs/${widget.id}/analysis',
+                        for (final period in ['week', 'month', 'all']) ...[
+                          'progress?period=$period',
+                          'leaderboard?period=$period',
+                        ],
+                      ],
                     );
                     if (context.mounted) Navigator.pop(context);
                   },

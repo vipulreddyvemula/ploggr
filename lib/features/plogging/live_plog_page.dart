@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import '../../shared/widgets/eco_art.dart';
 import '../../shared/widgets/ploggr_ui.dart';
 import '../../routes/app_routes.dart';
 import '../community/field_data.dart';
@@ -90,13 +91,18 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
           longitude: p['longitude'] as double,
         ),
     };
-    final ongoing =
-        track != null &&
-        track.endedAt == null &&
-        phase != TrackPhase.conflict &&
-        phase != TrackPhase.otherDevice;
+    final ongoing = switch (phase) {
+      TrackPhase.locating ||
+      TrackPhase.tracking ||
+      TrackPhase.gpsError ||
+      TrackPhase.noRoute ||
+      TrackPhase.paused => track != null && track.endedAt == null,
+      _ => false,
+    };
     final ended = track?.endedAt != null;
     final saved = phase == TrackPhase.completed;
+    final paused = phase == TrackPhase.paused;
+    final mapTarget = track?.route.lastOrNull ?? pins.values.firstOrNull;
     final offline = ref.watch(plogOfflineProvider);
     final recovering =
         phase == TrackPhase.idle &&
@@ -110,6 +116,28 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
       TrackPhase.locating => 'Checking location access',
       _ => null,
     };
+    final routeActions = [
+      if (phase == TrackPhase.locating || phase == TrackPhase.gpsError)
+        OutlinedButton.icon(
+          onPressed: controller.withoutRoute,
+          icon: const Icon(Icons.location_off_outlined),
+          label: const Text('Continue without a route'),
+        ),
+      if (phase == TrackPhase.tracking)
+        OutlinedButton.icon(
+          onPressed: controller.withoutRoute,
+          icon: const Icon(Icons.location_off_outlined),
+          label: const Text('Stop tracking GPS'),
+        ),
+      if ((phase == TrackPhase.gpsError || phase == TrackPhase.noRoute) &&
+          track != null &&
+          track.route.length < PlogTrack.maxPoints)
+        OutlinedButton.icon(
+          onPressed: controller.retryGps,
+          icon: const Icon(Icons.gps_fixed_rounded),
+          label: const Text('Retry GPS'),
+        ),
+    ];
     return AppPage(
       title: saved
           ? 'Plog saved'
@@ -127,26 +155,21 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   icon: Icons.add_a_photo_outlined,
                   onPressed: canAdd ? () => photos.currentState?.add() : null,
                 ),
-                Wrap(
-                  spacing: 12,
-                  alignment: WrapAlignment.center,
+                const SizedBox(height: AppSpace.sm),
+                AdaptiveTiles(
+                  minWidth: 124,
                   children: [
-                    TextButton.icon(
-                      onPressed: phase == TrackPhase.paused
-                          ? controller.resume
-                          : controller.pause,
+                    OutlinedButton.icon(
+                      onPressed: paused ? controller.resume : controller.pause,
                       icon: Icon(
-                        phase == TrackPhase.paused
-                            ? Icons.play_arrow
-                            : Icons.pause,
+                        paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
                       ),
-                      label: Text(
-                        phase == TrackPhase.paused ? 'Resume' : 'Pause',
-                      ),
+                      label: Text(paused ? 'Resume' : 'Pause'),
                     ),
-                    TextButton(
+                    FilledButton.tonalIcon(
                       onPressed: finish,
-                      child: const Text('Finish Plog'),
+                      icon: const Icon(Icons.stop_rounded),
+                      label: const Text('Finish Plog'),
                     ),
                   ],
                 ),
@@ -211,7 +234,7 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                 ],
               ),
             ),
-            if (track.route.isNotEmpty || pins.isNotEmpty) ...[
+            if (mapTarget != null) ...[
               const SizedBox(height: 12),
               ClipRRect(
                 borderRadius: AppRadius.card,
@@ -219,27 +242,20 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   height: 210,
                   route: track.route,
                   breaks: track.breaks,
-                  fitRoute: ended,
+                  fitRoute: ended && follow,
                   simplifyRoute: !ended,
-                  focus: follow
-                      ? track.route.lastOrNull ?? pins.values.firstOrNull
-                      : null,
+                  focus: follow ? mapTarget : null,
                   cameraKey: cameraKey,
                   points: {...pins, 'latest': ?track.route.lastOrNull},
                   onPan: () {
                     if (follow) setState(() => follow = false);
                   },
-                ),
-              ),
-              if (!follow)
-                TextButton.icon(
-                  onPressed: () => setState(() {
+                  onRecenter: () => setState(() {
                     follow = true;
                     cameraKey++;
                   }),
-                  icon: const Icon(Icons.my_location),
-                  label: const Text('Recenter route'),
                 ),
+              ),
             ],
           ],
           if (view.error != null)
@@ -250,22 +266,11 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   : AppStatus.failure,
             ),
 
-          if ([TrackPhase.gpsError, TrackPhase.locating].contains(phase))
-            TextButton(
-              onPressed: controller.withoutRoute,
-              child: const Text('Continue without a route'),
-            ),
-          if (phase == TrackPhase.tracking)
-            TextButton(
-              onPressed: controller.withoutRoute,
-              child: const Text('Stop tracking GPS'),
-            ),
-          if ([TrackPhase.gpsError, TrackPhase.noRoute].contains(phase) &&
-              track!.route.length < PlogTrack.maxPoints)
-            TextButton(
-              onPressed: controller.retryGps,
-              child: const Text('Retry GPS'),
-            ),
+          if (routeActions.isNotEmpty) ...[
+            const SizedBox(height: AppSpace.sm),
+            AdaptiveTiles(minWidth: 208, children: routeActions),
+            const SizedBox(height: AppSpace.sm),
+          ],
           if ([
             TrackPhase.starting,
             TrackPhase.saving,
@@ -311,9 +316,10 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
             ),
           if (phase == TrackPhase.saveError) ...[
             PrimaryButton('Retry save', onPressed: save),
-            TextButton(
+            OutlinedButton.icon(
               onPressed: controller.editPhotos,
-              child: const Text('Edit photos'),
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Edit photos'),
             ),
           ],
           if (phase == TrackPhase.otherDevice)
@@ -336,7 +342,10 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
               (ongoing ||
                   phase == TrackPhase.stopped ||
                   phase == TrackPhase.saveError))
-            TextButton(
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.colors.error,
+              ),
               onPressed: () async {
                 if (await confirmAction(
                       context,
@@ -347,7 +356,8 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   await controller.cancel();
                 }
               },
-              child: const Text('Discard Plog'),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Discard Plog'),
             ),
           if (saved) ...[
             const SizedBox(height: AppSpace.lg),
@@ -363,13 +373,17 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
               icon: const Icon(Icons.share_outlined),
               label: const Text('Share cleanup'),
             ),
-            TextButton(
+            OutlinedButton.icon(
               onPressed: () => switchPage(context, AppRoutes.home),
-              child: const Text('Return Home'),
+              icon: const Icon(Icons.home_outlined),
+              label: const Text('Return Home'),
             ),
           ],
           if (phase == TrackPhase.conflict)
-            TextButton(
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.colors.error,
+              ),
               onPressed: () async {
                 if (await confirmAction(
                       context,
@@ -380,7 +394,8 @@ class _LivePlogState extends ConsumerState<LivePlogPage> {
                   await controller.discardConflict();
                 }
               },
-              child: const Text('Discard local draft'),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Discard local draft'),
             ),
         ],
       ),

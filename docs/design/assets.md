@@ -1,6 +1,6 @@
 # Flutter visual assets
 
-The Flutter preview bundles its font and four PNGs. The illustrations and sample photograph were generated for this project. The generation prompts below are retained as provenance. Reference screenshots are kept with the [visual validation record](validation.md).
+The Flutter app bundles its font, project illustrations and brand assets. The illustrations and sample photograph were generated for this project. The generation prompts below are retained as provenance. Reference screenshots are kept with the [visual validation record](validation.md).
 
 | Asset | Use |
 | --- | --- |
@@ -9,8 +9,12 @@ The Flutter preview bundles its font and four PNGs. The illustrations and sample
 | [Together illustration](../../assets/images/illustrations/together.png) | Third onboarding page. |
 | [Sample litter photograph](../../assets/images/demo/litter.png) | Preview camera, report and community photo. |
 | [Nunito Sans variable font](../../assets/fonts/NunitoSans.ttf) | Bundled Google Fonts family. Keep its [font license](../../assets/fonts/OFL.txt) with the font. |
-| [Flutter artwork](../../lib/shared/widgets/eco_art.dart) | Wordmark, foliage, landscapes, trophies, badges and avatars. |
+| [Flutter artwork](../../lib/shared/widgets/eco_art.dart) | Foliage, landscapes, trophies, badges and avatars. |
 | [Preview map](../../lib/shared/widgets/preview_map.dart) | Locally drawn streets, markers and sample route. |
+
+## Wordmark and foliage
+
+The [wordmark master](../../assets/brand/ploggr.svg) is a vector reconstruction of the project owner’s November 2026 splash reference. Its rounded lettering, running figure and sprout are drawn paths. The Flutter assets are transparent PNG exports 1200 pixels wide. The dark version lightens the letters for contrast. Android launcher images use the same sprouting runner emblem. The [corner leaves](../../assets/brand/canopy.svg) are original vector artwork based on the same reference. The [Profile park vignette](../../assets/brand/profile-park.svg) is original artwork based on the Profile reference. Home reuses the project plogging illustration listed above.
 
 ## Generation prompts
 

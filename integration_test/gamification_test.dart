@@ -46,21 +46,13 @@ void main() {
         mod.close();
       });
 
-      Future<void> waitText(String value) async {
-        final target = find.text(value);
+      Future<void> waitText(String value, {bool contains = false}) async {
+        final target = contains ? find.textContaining(value) : find.text(value);
         final expires = DateTime.now().add(const Duration(seconds: 20));
         while (target.evaluate().isEmpty && DateTime.now().isBefore(expires)) {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(target, findsWidgets);
-      }
-
-      Future<void> tap(String value) async {
-        await waitText(value);
-        final target = find.text(value).last;
-        await tester.ensureVisible(target);
-        await tester.tap(target);
-        await tester.pumpAndSettle();
       }
 
       final session = container.read(sessionControllerProvider.notifier);
@@ -82,9 +74,8 @@ void main() {
       await waitText('Points pending analysis or review');
 
       router.go('/profile');
-      await tap('Set a goal');
-      await tap('Save');
-      await waitText('0 of 1 verified cleanups');
+      await waitText('0 XP · 0 verified cleanups');
+      expect(find.text('Daily cleanup goal'), findsNothing);
 
       await mod.put(
         'moderation/analysis/$id',
@@ -101,11 +92,11 @@ void main() {
         },
       );
       container.invalidate(fieldData);
-      await waitText('10 points');
-      await waitText('1 of 1 verified cleanups');
-      await waitText('Current streak · 1 day');
+      await waitText('10 XP · 1 verified cleanup');
       router.go('/badges');
+      await waitText(' badges earned', contains: true);
       await waitText('Challenge starter');
+      await tester.pumpAndSettle();
       expect(find.textContaining('Earned '), findsWidgets);
       router.go('/challenges');
       await waitText('Completed · +2 points earned');
@@ -127,8 +118,7 @@ void main() {
       router.go('/leaderboard');
       await waitText('Unranked');
       router.go('/profile');
-      await waitText('0 of 1 verified cleanups');
-      await waitText('0 points');
+      await waitText('0 XP · 0 verified cleanups');
     },
   );
 }

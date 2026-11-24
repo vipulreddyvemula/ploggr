@@ -13,6 +13,7 @@ import 'package:ploggr/features/auth/session/session_controller.dart';
 import 'package:ploggr/features/home/activity_overview.dart';
 import 'package:ploggr/features/plogging/data/location_source.dart';
 import 'package:ploggr/features/plogging/data/plog_api.dart';
+import 'package:ploggr/features/plogging/activity_page.dart';
 import 'package:ploggr/features/spots/photo_picker.dart';
 import 'package:ploggr/features/spots/spot.dart';
 import 'package:ploggr/features/spots/spot_api.dart';
@@ -120,9 +121,12 @@ void main() {
       Future<void> tap(String s) async {
         await tester.pump(const Duration(milliseconds: 200));
         await wait(() => label(s).evaluate().isNotEmpty, s);
-        final target = label(s).last;
-        await tester.ensureVisible(target);
-        await tester.pump(const Duration(milliseconds: 250));
+        // As dashboard data arrives, cards above the target can change height.
+        for (var attempt = 0; attempt < 8; attempt++) {
+          await tester.ensureVisible(label(s).last);
+          await tester.pump(const Duration(milliseconds: 250));
+          if (label(s).hitTestable().evaluate().isNotEmpty) break;
+        }
         await wait(() => label(s).hitTestable().evaluate().isNotEmpty, s);
         await tester.tap(label(s).hitTestable().last);
         await tester.pump(const Duration(milliseconds: 350));
@@ -152,7 +156,11 @@ void main() {
           '${const Uuid().v4()}@example.test',
           const Uuid().v4(),
         );
-        await tap('Report');
+        await wait(
+          () => label('No reports yet').evaluate().isNotEmpty,
+          'signed-in dashboard data',
+        );
+        await tap('Report litter');
         await tap('Choose photo');
         await tap('Continue to details');
         await tap('Continue to location');
@@ -230,6 +238,29 @@ void main() {
           () => label('Other litter').evaluate().isNotEmpty,
           'visible spot details',
         );
+        await tap('Heatmap');
+        await wait(
+          () => label(
+            'Blue to red · lower to higher litter density',
+          ).evaluate().isNotEmpty,
+          'heatmap legend',
+        );
+        await tap('Heatmap');
+        await tap('List');
+        await tap('Cleaned');
+        await wait(
+          () => label(
+            'No collected spots match this area and filters.',
+          ).evaluate().isNotEmpty,
+          'cleaned-only results',
+        );
+        expect(label('Other litter'), findsNothing);
+        await tap('Active Litter');
+        await wait(
+          () => label('Other litter').evaluate().isNotEmpty,
+          'active report in list',
+        );
+        await tap('Map view');
         await capture('reported-map');
         await progress('Published report appears on map');
         await session.logout();
@@ -252,6 +283,24 @@ void main() {
         );
         await tap('Plog this spot');
         await tap('Continue without a route');
+        await wait(
+          () => label('Recenter').evaluate().isNotEmpty,
+          'in-map recenter control',
+        );
+        final map = find.byType(SpotMap).last;
+        await tester.ensureVisible(map);
+        await tester.pump(const Duration(milliseconds: 300));
+        final recenter = find.descendant(of: map, matching: label('Recenter'));
+        expect(recenter.hitTestable(), findsOneWidget);
+        final start = tester.widget<SpotMap>(map);
+        expect(start.focus, spot.point);
+        await tester.dragFrom(tester.getCenter(map), const Offset(-80, 0));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.widget<SpotMap>(map).focus, isNull);
+        await tap('Recenter');
+        final centered = tester.widget<SpotMap>(map);
+        expect(centered.focus, spot.point);
+        expect(centered.cameraKey, start.cameraKey + 1);
         await capture('live-plog');
         await tap('Pause');
         await tap('Resume');
@@ -264,19 +313,15 @@ void main() {
         await tap('Finish Plog');
         await tap('Save Plog');
         await tap('View activity');
+        // Activity is pushed above the tab. Inspect the displayed detail page.
         await wait(
-          () => router.routerDelegate.currentConfiguration.uri.path.startsWith(
-            '/profile/activity/',
-          ),
+          () => label('Plog details').evaluate().isNotEmpty,
           'saved activity',
         );
-        final api = container.read(plogApiProvider),
-            id = router
-                .routerDelegate
-                .currentConfiguration
-                .uri
-                .pathSegments
-                .last;
+        final api = container.read(plogApiProvider);
+        final id = tester
+            .widget<PlogActivityPage>(find.byType(PlogActivityPage))
+            .id!;
         final saved = await api.detail(id);
         expect(saved.route, isEmpty);
         expect(await api.evidence(id), hasLength(1));
@@ -290,13 +335,17 @@ void main() {
             () =>
                 label('Analysis ready').evaluate().isNotEmpty ||
                 label('Analysis reviewed').evaluate().isNotEmpty ||
-                label('Needs review').evaluate().isNotEmpty,
+                label('Awaiting photo review').evaluate().isNotEmpty,
             'live vision result',
             timeout: const Duration(minutes: 6),
           );
         } else {
           await wait(
-            () => label('Waiting for analysis').evaluate().isNotEmpty,
+            () =>
+                label(
+                  'Waiting for photo analysis to be enabled',
+                ).evaluate().isNotEmpty ||
+                label('Waiting for analysis').evaluate().isNotEmpty,
             'queued analysis',
           );
         }
@@ -311,10 +360,10 @@ void main() {
           () =>
               router.routerDelegate.currentConfiguration.uri.path ==
                   '/community' &&
-              label('Community posts').evaluate().isNotEmpty,
+              label('Feed').evaluate().isNotEmpty,
           'community feed',
         );
-        await tap('My posts');
+        await tap('My Posts');
         final sharedSummary = label(
           'Shared cleanup · ${formatWalkSummary(saved.seconds)}',
         );

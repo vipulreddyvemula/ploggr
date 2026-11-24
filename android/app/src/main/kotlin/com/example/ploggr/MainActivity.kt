@@ -1,5 +1,6 @@
 package com.example.ploggr
 
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,6 +24,16 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(messenger, "ploggr/share").setMethodCallHandler { call, result ->
+            if (call.method == "text" && call.arguments is String) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, call.arguments as String)
+                }
+                startActivity(Intent.createChooser(intent, null))
+                result.success(null)
+            } else result.notImplemented()
+        }
         MethodChannel(messenger, "ploggr/tracking").setMethodCallHandler { call, result ->
             val prefs = getSharedPreferences("tracking_notifications", MODE_PRIVATE)
             when {

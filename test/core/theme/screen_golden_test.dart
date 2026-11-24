@@ -17,9 +17,23 @@ void main() {
     await icons.load();
   });
 
+  Future<void> loadArtwork(WidgetTester tester) async {
+    final images = tester.widgetList<Image>(find.byType(Image));
+    final context = tester.element(find.byType(Scaffold).first);
+    await tester.runAsync(
+      () => Future.wait(images.map((w) => precacheImage(w.image, context))),
+    );
+    await tester.pump();
+  }
+
   for (final brightness in [Brightness.light, Brightness.dark]) {
     testWidgets('preview home in ${brightness.name} theme', (tester) async {
       await existing.openApp(tester, '/home', brightness: brightness);
+      await loadArtwork(tester);
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold))).brightness,
+        brightness,
+      );
       expect(tester.takeException(), isNull);
       await expectLater(
         find.byType(Scaffold).first,

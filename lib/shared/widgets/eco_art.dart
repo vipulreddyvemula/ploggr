@@ -6,83 +6,12 @@ class PloggrLogo extends StatelessWidget {
   const PloggrLogo({super.key, this.size = 58});
   final double size;
   @override
-  Widget build(BuildContext context) => Semantics(
-    label: 'Ploggr',
-    image: true,
-    child: ExcludeSemantics(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              'pl',
-              textScaler: TextScaler.noScaling,
-              style: TextStyle(
-                fontSize: size,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -3,
-                height: 1.3,
-                color: context.colors.onPrimaryContainer,
-              ),
-            ),
-            SizedBox(
-              width: size * .57,
-              height: size * .95,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    bottom: size * .09,
-                    child: Container(
-                      width: size * .52,
-                      height: size * .53,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: context.colors.primary,
-                          width: size * .055,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.public_rounded,
-                        color: context.colors.primary,
-                        size: size * .39,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: -size * .02,
-                    child: Transform.rotate(
-                      angle: .25,
-                      child: Icon(
-                        Icons.eco,
-                        color: context.colors.primary,
-                        size: size * .34,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              'ggr',
-              textScaler: TextScaler.noScaling,
-              style: TextStyle(
-                fontSize: size,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -3,
-                height: 1.3,
-                color: context.colors.onPrimaryContainer,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/brand/wordmark${context.colors.brightness == Brightness.dark ? '-dark' : ''}.png',
+    width: size * 2.9,
+    height: size * 2.9 * 194 / 480,
+    fit: BoxFit.contain,
+    semanticLabel: 'Ploggr',
   );
 }
 
@@ -483,4 +412,87 @@ class _PersonPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PersonPainter oldDelegate) =>
       oldDelegate.index != index;
+}
+
+/// Section heading or wordmark for the four top-level destinations.
+class TabHeader extends StatelessWidget {
+  const TabHeader({super.key, this.title, this.subtitle, required this.action});
+  final String? title, subtitle;
+  final Widget action;
+  @override
+  Widget build(BuildContext context) => Stack(
+    clipBehavior: Clip.none,
+    children: [
+      Positioned(
+        left: -24,
+        top: -26,
+        child: Image.asset(
+          'assets/images/brand/canopy.png',
+          width: 40,
+          excludeFromSemantics: true,
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10, left: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (title == null)
+                  const PloggrLogo(size: 39)
+                else
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(title!, style: AppText.title),
+                    ),
+                  ),
+                if (title == null) const Spacer(),
+                action,
+              ],
+            ),
+            if (subtitle != null)
+              Text(
+                subtitle!,
+                style: AppText.body.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+/// Equal-width columns that wrap into additional rows at larger text scales.
+class AdaptiveTiles extends StatelessWidget {
+  const AdaptiveTiles({
+    super.key,
+    required this.children,
+    required this.minWidth,
+    this.spacing = 8,
+  });
+  final List<Widget> children;
+  final double minWidth, spacing;
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      if (children.isEmpty) return const SizedBox.shrink();
+      final scaledWidth =
+          MediaQuery.textScalerOf(context).scale(14) / 14 * minWidth;
+      final columns = ((box.maxWidth + spacing) / (scaledWidth + spacing))
+          .floor()
+          .clamp(1, children.length);
+      final width = (box.maxWidth - (columns - 1) * spacing) / columns;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
 }

@@ -14,6 +14,7 @@ class AppPage extends StatelessWidget {
     this.bottomNavigation,
     this.bottomAction,
     this.actions,
+    this.tabHeader,
     this.scroll = true,
     this.padding = const EdgeInsets.fromLTRB(20, AppSpace.md, 20, AppSpace.xl),
     this.root = false,
@@ -24,6 +25,7 @@ class AppPage extends StatelessWidget {
   final Widget? bottomNavigation;
   final Widget? bottomAction;
   final List<Widget>? actions;
+  final Widget? tabHeader;
   final bool scroll, root;
   final EdgeInsets padding;
   final String backTo;
@@ -55,7 +57,7 @@ class AppPage extends StatelessWidget {
         }
       },
       child: Scaffold(
-        appBar: compactKeyboard
+        appBar: compactKeyboard || tabHeader != null
             ? null
             : AppBar(
                 toolbarHeight: kToolbarHeight * titleScale.clamp(1.0, 2.0),
@@ -71,7 +73,7 @@ class AppPage extends StatelessWidget {
                 actions: actions ?? (root ? null : [const SizedBox(width: 48)]),
               ),
         body: SafeArea(
-          top: false,
+          top: tabHeader != null,
           bottom: bottomNavigation == null && bottomAction == null,
           child: Align(
             alignment: Alignment.topCenter,
@@ -83,7 +85,12 @@ class AppPage extends StatelessWidget {
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: padding,
-                      child: child,
+                      child: tabHeader == null
+                          ? child
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [tabHeader!, child],
+                            ),
                     )
                   : Padding(padding: padding, child: child),
             ),
@@ -276,7 +283,10 @@ class SectionTitle extends StatelessWidget {
   final Widget? trailing;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 10),
+    padding: EdgeInsets.only(
+      top: trailing == null ? 20 : 10,
+      bottom: trailing == null ? 10 : 4,
+    ),
     child: Row(
       children: [
         Expanded(

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ploggr/core/theme/app_theme.dart';
+import 'package:ploggr/core/theme/theme_preference.dart';
 import 'package:ploggr/features/auth/session/session_controller.dart';
 import 'package:ploggr/routes/app_router.dart';
 import 'package:ploggr/features/cleanups/cleanup_controller.dart';
@@ -119,6 +120,9 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
+      themeMode: ref.watch(
+        themePreferenceProvider.select((theme) => theme.mode),
+      ),
       themeAnimationDuration: Duration.zero,
       routerConfig: router,
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(

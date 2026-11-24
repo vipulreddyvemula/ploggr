@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter/services.dart';
+import '../../shared/widgets/eco_art.dart';
 import '../../routes/app_routes.dart';
 import '../../shared/widgets/bottom_navigation.dart';
 import '../../shared/widgets/ploggr_ui.dart';
@@ -22,18 +24,21 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
     title: 'Community',
     root: true,
     bottomNavigation: const BottomNavBar(),
-    actions: [
-      IconButton(
+    padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+    tabHeader: TabHeader(
+      title: 'Community',
+      subtitle: 'Connect, clean and create impact together.',
+      action: IconButton(
         tooltip: 'Refresh community',
         onPressed: () => ref.invalidate(fieldData),
         icon: const Icon(Icons.refresh),
       ),
-    ],
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
+        AdaptiveTiles(
+          minWidth: 88,
           children: [
             for (final (label, route, icon) in [
               ('Cleanups', AppRoutes.cleanups, Icons.groups_outlined),
@@ -41,25 +46,35 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
               (
                 'Leaderboard',
                 AppRoutes.leaderboard,
-                Icons.leaderboard_outlined,
+                Icons.emoji_events_outlined,
               ),
             ])
-              ActionChip(
-                avatar: Icon(icon, size: 18),
-                label: Text(label),
-                onPressed: () => openPage(context, route),
+              EcoCard(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 2,
+                ),
+                onTap: () => openPage(context, route),
+                child: Column(
+                  children: [
+                    Icon(icon, size: 25, color: context.colors.primary),
+                    const SizedBox(height: 4),
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: AppText.label.copyWith(
+                        fontSize: 13,
+                        color: context.colors.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
-        const SectionTitle('Community posts'),
-        PrimaryButton(
-          'Share a post',
-          icon: Icons.edit_outlined,
-          onPressed: () => openPage(context, '/community/write'),
-        ),
         const SizedBox(height: 12),
         FilterTabs(
-          labels: const ['Everyone', 'My posts', 'Sightings'],
+          labels: const ['Feed', 'My Posts', 'Sightings'],
           selected: tab,
           onChanged: (i) => setState(() {
             tab = i;
@@ -68,6 +83,17 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
               ..add(null);
           }),
         ),
+        const SizedBox(height: 10),
+        FilledButton.tonalIcon(
+          onPressed: () => openPage(context, '/community/write'),
+          style: FilledButton.styleFrom(
+            backgroundColor: context.colors.primaryContainer,
+            foregroundColor: context.colors.onPrimaryContainer,
+          ),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Share a post'),
+        ),
+        const SizedBox(height: 4),
         if (tab == 2)
           const OpenSightings()
         else
@@ -93,168 +119,7 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
                       for (final post in d['items'])
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
-                          child: EcoCard(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor:
-                                          context.colors.primaryContainer,
-                                      foregroundColor:
-                                          context.colors.onPrimaryContainer,
-                                      child: Text(
-                                        (post['author'] as String)
-                                                .trim()
-                                                .characters
-                                                .firstOrNull
-                                                ?.toUpperCase() ??
-                                            'P',
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpace.md),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            post['author'],
-                                            style: AppText.label,
-                                          ),
-                                          Text(
-                                            localDate(
-                                              context,
-                                              post['createdAt'],
-                                            ),
-                                            style: AppText.caption,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: AppSpace.md),
-                                Text(post['body']),
-                                if (post['plogId'] != null)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AppSpace.sm,
-                                    ),
-                                    child: EcoCard(
-                                      color: context.colors.primaryContainer,
-                                      padding: const EdgeInsets.all(
-                                        AppSpace.md,
-                                      ),
-                                      onTap: post['mine'] == true
-                                          ? () => openPage(
-                                              context,
-                                              '${AppRoutes.activity}/${post['plogId']}',
-                                            )
-                                          : null,
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.directions_walk),
-                                          const SizedBox(width: AppSpace.sm),
-                                          Expanded(
-                                            child: Text(
-                                              [
-                                                'Shared cleanup',
-                                                if (post['seconds']
-                                                    case final int seconds)
-                                                  formatWalkSummary(
-                                                    seconds,
-                                                    meters:
-                                                        post['meters'] as num?,
-                                                  ),
-                                              ].join(' · '),
-                                              style: AppText.label,
-                                            ),
-                                          ),
-                                          if (post['mine'] == true)
-                                            const Icon(Icons.chevron_right),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                Wrap(
-                                  spacing: 4,
-                                  children: [
-                                    FieldAction(
-                                      post['liked'] == true
-                                          ? 'Unlike · ${post['likes']}'
-                                          : 'Like · ${post['likes']}',
-                                      () => writeField(
-                                        ref,
-                                        'PUT',
-                                        'community/posts/${post['id']}/reaction',
-                                        data: {
-                                          'selected': post['liked'] != true,
-                                        },
-                                        reload: [path],
-                                      ),
-                                      icon: post['liked'] == true
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                    ),
-                                    TextButton.icon(
-                                      onPressed: () => openPage(
-                                        context,
-                                        '/community/post/${post['id']}',
-                                      ),
-                                      icon: const Icon(
-                                        Icons.chat_bubble_outline,
-                                      ),
-                                      label: Text(
-                                        'Comment · ${post['comments']}',
-                                      ),
-                                    ),
-                                    if (post['mine'] == true) ...[
-                                      TextButton(
-                                        onPressed: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                PostComposer(post: post),
-                                          ),
-                                        ),
-                                        child: const Text('Edit'),
-                                      ),
-                                      FieldAction('Delete', () async {
-                                        if (await confirmAction(
-                                              context,
-                                              'Delete this post?',
-                                              'Delete',
-                                            ) &&
-                                            mounted) {
-                                          await writeField(
-                                            ref,
-                                            'DELETE',
-                                            'community/posts/${post['id']}',
-                                            reload: [path],
-                                          );
-                                        }
-                                      }),
-                                    ] else
-                                      FieldAction('Report post', () async {
-                                        await writeField(
-                                          ref,
-                                          'PUT',
-                                          'community/posts/${post['id']}/flag',
-                                        );
-                                        if (context.mounted) {
-                                          toast(
-                                            context,
-                                            'Reported for moderator review.',
-                                          );
-                                        }
-                                      }),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: _FeedPost(post: post, path: path),
                         ),
                       if (cursor == pages.last && d['next'] != null)
                         TextButton(
@@ -269,6 +134,191 @@ class _CommunityState extends ConsumerState<LiveCommunity> {
       ],
     ),
   );
+}
+
+class _FeedPost extends ConsumerWidget {
+  const _FeedPost({required this.post, required this.path});
+  final Map post;
+  final String path;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mine = post['mine'] == true;
+    final id = post['id'];
+    final liked = post['liked'] == true;
+    final linked = post['plogId'] != null;
+    final author = post['author'] as String;
+    Future<void> more(String action) async {
+      try {
+        if (action == 'Edit') {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PostComposer(post: post)),
+          );
+        } else if (action == 'Delete') {
+          if (await confirmAction(context, 'Delete this post?', 'Delete') &&
+              context.mounted) {
+            await writeField(
+              ref,
+              'DELETE',
+              'community/posts/$id',
+              reload: [path],
+            );
+          }
+        } else {
+          await writeField(ref, 'PUT', 'community/posts/$id/flag');
+          if (context.mounted) toast(context, 'Reported for moderator review.');
+        }
+      } catch (_) {
+        if (context.mounted) {
+          toast(context, 'Could not save. Check your connection and retry.');
+        }
+      }
+    }
+
+    return EcoCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: context.colors.primaryContainer,
+                foregroundColor: context.colors.primary,
+                child: Text(
+                  author.trim().characters.firstOrNull?.toUpperCase() ?? 'P',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(author, style: AppText.label),
+                    Text(
+                      "${localDate(context, post['createdAt'])} · ${linked ? 'Plog session' : 'Community post'}",
+                      style: AppText.caption,
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Post options',
+                icon: const Icon(Icons.more_horiz),
+                onSelected: more,
+                itemBuilder: (_) => [
+                  for (final action
+                      in mine ? ['Edit', 'Delete'] : ['Report post'])
+                    PopupMenuItem(value: action, child: Text(action)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(post['body'], style: AppText.body),
+          if (linked)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: EcoCard(
+                color: context.colors.primaryContainer,
+                padding: const EdgeInsets.all(10),
+                onTap: mine
+                    ? () => openPage(
+                        context,
+                        '${AppRoutes.activity}/${post['plogId']}',
+                      )
+                    : null,
+                child: Row(
+                  children: [
+                    Icon(Icons.directions_walk, color: context.colors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        [
+                          'Shared cleanup',
+                          if (post['seconds'] case final int seconds)
+                            formatWalkSummary(
+                              seconds,
+                              meters: post['meters'] as num?,
+                            ),
+                        ].join(' · '),
+                        style: AppText.label,
+                      ),
+                    ),
+                    if (mine) const Icon(Icons.chevron_right),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          const Divider(),
+          Row(
+            children: [
+              Flexible(
+                child: Tooltip(
+                  message: liked ? 'Unlike' : 'Like',
+                  child: FieldAction(
+                    "${post['likes']}",
+                    () => writeField(
+                      ref,
+                      'PUT',
+                      'community/posts/$id/reaction',
+                      data: {'selected': !liked},
+                      reload: [path],
+                    ),
+                    icon: liked ? Icons.favorite : Icons.favorite_border,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: TextButton.icon(
+                  onPressed: () => openPage(context, '/community/post/$id'),
+                  icon: const Icon(
+                    Icons.chat_bubble_outline,
+                    semanticLabel: 'Comments',
+                  ),
+                  label: Text("${post['comments']}"),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Share post text',
+                icon: const Icon(Icons.share_outlined),
+                onPressed: () async {
+                  try {
+                    await const MethodChannel(
+                      'ploggr/share',
+                    ).invokeMethod<void>('text', post['body']);
+                  } on MissingPluginException {
+                    if (context.mounted) {
+                      await showDialog<void>(
+                        context: context,
+                        builder: (dialog) => AlertDialog(
+                          title: const Text('Share post text'),
+                          content: SelectableText(post['body']),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialog),
+                              child: const Text('Close'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  } on PlatformException {
+                    if (context.mounted) {
+                      toast(context, 'Could not open sharing.');
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class PostComposer extends ConsumerStatefulWidget {
