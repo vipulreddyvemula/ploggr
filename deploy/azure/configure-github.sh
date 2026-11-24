@@ -29,10 +29,10 @@ az role assignment create --assignee-object-id "$principal" --assignee-principal
   --role AcrPush --scope "$registry_id" -o none
 az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
   --role Reader --scope "$registry_id" -o none
-for scope in "$app_id" "$job_id"; do
-  az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
-    --role 'Container Apps Contributor' --scope "$scope" -o none
-done
+az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
+  --role 'Container Apps Contributor' --scope "$app_id" -o none
+az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
+  --role 'Container Apps Jobs Operator' --scope "$job_id" -o none
 
 gh variable set FIELD_AZURE_CLIENT_ID --body "$client" -R "$repo"
 gh variable set FIELD_AZURE_TENANT_ID --body "$tenant" -R "$repo"
