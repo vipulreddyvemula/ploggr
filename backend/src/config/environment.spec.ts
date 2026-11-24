@@ -66,6 +66,23 @@ describe('environment configuration', () => {
     });
   });
 
+  it('validates private Blob container URLs and disallows mixed storage providers', () => {
+    const env = { ...credentials, AUTH_SECRET: secret };
+    const container = 'https://ploggrfield.blob.core.windows.net/evidence';
+    expect(validateEnvironment({ ...env, EVIDENCE_AZURE_CONTAINER_URL: container }).evidenceBlobContainer)
+      .toBe(container);
+    expect(() => validateEnvironment({ ...env, EVIDENCE_AZURE_CONTAINER_URL: `${container}?sig=key` }))
+      .toThrow('EVIDENCE_AZURE_CONTAINER_URL');
+    expect(() => validateEnvironment({ ...env, EVIDENCE_AZURE_CONTAINER_URL: container, EVIDENCE_S3_BUCKET: 'example' }))
+      .toThrow('Configure one evidence storage provider');
+  });
+
+  it('accepts an explicit database TLS setting and rejects invalid values', () => {
+    const env = { ...credentials, AUTH_SECRET: secret };
+    expect(validateEnvironment({ ...env, DB_TLS: 'true' }).DB_TLS).toBe(true);
+    expect(() => validateEnvironment({ ...env, DB_TLS: 'optional' })).toThrow('DB_TLS must be true or false');
+  });
+
   it.each(['', 'abc', '5432.5', '0', '-1', '65536', '5e3'])('rejects invalid DB_PORT=%j', (DB_PORT) => {
     expect(() => validateEnvironment({ ...credentials, DB_PORT })).toThrow('DB_PORT must be');
   });

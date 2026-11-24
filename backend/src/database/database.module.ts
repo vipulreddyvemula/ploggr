@@ -15,6 +15,7 @@ import { createDatabaseOptions } from './database.config';
           DB_NAME: config.get('DB_NAME', { infer: true }),
           DB_USER: config.get('DB_USER', { infer: true }),
           DB_PASSWORD: config.get('DB_PASSWORD', { infer: true }),
+          DB_TLS: config.get('DB_TLS', { infer: true }),
         }),
         retryAttempts: 3,
         retryDelay: 1000,

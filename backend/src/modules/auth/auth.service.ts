@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { argon2id, hash, verify } from 'argon2';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { UsersService } from '../users/users.service';
@@ -11,9 +12,15 @@ const hashing = { type: argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1
 export class AuthService {
   private readonly dummyHash = hash('invalid-account-timing-padding', hashing);
 
-  constructor(private readonly db: DataSource, private readonly users: UsersService, private readonly sessions: SessionService) {}
+  constructor(
+    private readonly db: DataSource,
+    private readonly users: UsersService,
+    private readonly sessions: SessionService,
+    private readonly config: ConfigService,
+  ) {}
 
   async signup({ email, password }: SignupDto) {
+    this.checkFieldTestEmail(email);
     const passwordHash = await hash(password, hashing);
     try {
       return await this.db.transaction(async manager => {
@@ -28,9 +35,17 @@ export class AuthService {
   }
 
   async login({ email, password }: LoginDto) {
+    this.checkFieldTestEmail(email);
     const user = await this.users.findForAuthentication(email);
     const matches = await verify(user?.passwordHash ?? await this.dummyHash, password);
     if (!matches || !user?.passwordHash) throw new UnauthorizedException('Invalid email or password');
     return this.db.transaction(manager => this.sessions.issue(manager, user));
+  }
+
+  private checkFieldTestEmail(email: string) {
+    const allowed = this.config.get<string>('AUTH_FIELD_TEST_EMAIL');
+    if (allowed && email.toLowerCase() !== allowed.toLowerCase()) {
+      throw new UnauthorizedException('Use your assigned field-test account');
+    }
   }
 }

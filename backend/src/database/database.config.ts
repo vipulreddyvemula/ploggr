@@ -32,7 +32,7 @@ export function createDatabaseOptions(env: DatabaseEnvironment): DataSourceOptio
     password: env.DB_PASSWORD,
     connectTimeoutMS: 5000,
     extra: { query_timeout: 5000, statement_timeout: 5000 },
-    ssl: false,
+    ssl: env.DB_TLS ? { rejectUnauthorized: true } : false,
     synchronize: false,
     migrationsRun: false,
     uuidExtension: 'pgcrypto', // Selects PostgreSQL's built-in gen_random_uuid().

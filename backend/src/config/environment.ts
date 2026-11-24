@@ -4,6 +4,7 @@ export interface DatabaseEnvironment {
   DB_NAME: string;
   DB_USER: string;
   DB_PASSWORD: string;
+  DB_TLS?: boolean;
 }
 
 interface StorageEnvironment {
@@ -39,6 +40,7 @@ function storageEnvironment(config: Record<string, unknown>): StorageEnvironment
 
 export interface Environment extends DatabaseEnvironment {
   evidenceStorage?: StorageEnvironment;
+  evidenceBlobContainer?: string;
   NODE_ENV: 'development' | 'test' | 'production';
   HOST: string;
   AUTH_SECRET: string;
@@ -116,8 +118,17 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     }
   }
 
+  const evidenceStorage = storageEnvironment(config);
+  const blob = config.EVIDENCE_AZURE_CONTAINER_URL;
+  if (blob !== undefined && (typeof blob !== 'string' ||
+    !/^https:\/\/[a-z0-9]{3,24}\.blob\.core\.windows\.net\/[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,61}[a-z0-9]$/.test(blob))) {
+    throw new Error('Set EVIDENCE_AZURE_CONTAINER_URL to a private Azure Blob container URL');
+  }
+  if (blob && evidenceStorage) throw new Error('Configure one evidence storage provider');
+
   return {
-    evidenceStorage: storageEnvironment(config),
+    evidenceStorage,
+    evidenceBlobContainer: blob,
     AUTH_ACCESS_TTL_SECONDS: ttl,
     AUTH_SECRET: secret,
     NODE_ENV: nodeEnv,
@@ -133,6 +144,9 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
 
 export function validateDatabaseEnvironment(config: Record<string, unknown>): DatabaseEnvironment {
   const port = parsePort(config.DB_PORT, 'DB_PORT', 5432);
+  if (config.DB_TLS !== undefined && config.DB_TLS !== 'true' && config.DB_TLS !== 'false') {
+    throw new Error('DB_TLS must be true or false');
+  }
 
   function text(name: string, fallback?: string): string {
     const value = config[name] ?? fallback;
@@ -149,5 +163,6 @@ export function validateDatabaseEnvironment(config: Record<string, unknown>): Da
     DB_NAME: text('DB_NAME', 'ploggr'),
     DB_USER: text('DB_USER'),
     DB_PASSWORD: text('DB_PASSWORD'),
+    DB_TLS: config.DB_TLS === 'true' ? true : undefined,
   };
 }

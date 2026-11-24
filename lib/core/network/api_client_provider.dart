@@ -12,7 +12,9 @@ final apiClientProvider = Provider.autoDispose<Dio?>((ref) {
       baseUrl: baseUrl.toString(),
       connectTimeout: const Duration(seconds: 5),
       sendTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 15),
+      receiveTimeout: const bool.fromEnvironment('PLOGGR_FIELD_TEST')
+          ? const Duration(seconds: 60)
+          : const Duration(seconds: 15),
       responseType: ResponseType.json,
       headers: {'Accept': 'application/json'},
       followRedirects: false,

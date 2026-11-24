@@ -53,3 +53,4 @@ android/build/
 .env.*
 !.env.example
 /config/*.local.json
+/config/ploggr-field.p12

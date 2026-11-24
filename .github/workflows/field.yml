@@ -1,0 +1,134 @@
+name: Ploggr field test
+
+on:
+  push:
+    branches: [feature/live-litter-map]
+    paths:
+      - 'backend/**'
+      - 'deploy/azure/**'
+      - '.github/workflows/field.yml'
+      - 'android/**'
+      - 'assets/**'
+      - 'lib/**'
+      - 'pubspec.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ploggr-field
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    if: github.ref == 'refs/heads/feature/live-litter-map'
+    runs-on: ubuntu-24.04
+    outputs:
+      backend: ${{ steps.paths.outputs.backend }}
+      android: ${{ steps.paths.outputs.android }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check changed paths
+        id: paths
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            printf 'backend=true\nandroid=true\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- backend/ deploy/azure/ .github/workflows/field.yml; then
+            echo backend=true >> "$GITHUB_OUTPUT"
+          fi
+          if ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- android/ assets/ lib/ pubspec.yaml pubspec.lock .github/workflows/field.yml; then
+            echo android=true >> "$GITHUB_OUTPUT"
+          fi
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: backend/.nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Validate backend
+        run: |
+          npm --prefix backend ci --include=dev
+          npm --prefix backend run check
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
+        with:
+          client-id: ${{ vars.FIELD_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.FIELD_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.FIELD_AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy API
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.FIELD_AZURE_RESOURCE_GROUP }}
+          FIELD_REGISTRY: ${{ vars.FIELD_REGISTRY }}
+          FIELD_API_URL: ${{ vars.FIELD_API_URL }}
+        run: deploy/azure/release.sh
+
+  android:
+    needs: [changes, backend]
+    if: >-
+      always() && needs.changes.outputs.android == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment: ploggr-field-android
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+      - name: Validate Flutter
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          flutter test --no-pub
+      - name: Build signed Android APK
+        env:
+          FIELD_API_URL: ${{ vars.FIELD_API_URL }}
+          FIELD_KEYSTORE_BASE64: ${{ secrets.FIELD_KEYSTORE_BASE64 }}
+          PLOGGR_FIELD_STORE_PASSWORD: ${{ secrets.FIELD_KEYSTORE_PASSWORD }}
+        run: |
+          : "${FIELD_KEYSTORE_BASE64:?}" "${PLOGGR_FIELD_STORE_PASSWORD:?}"
+          [[ "$FIELD_API_URL" =~ ^https://[a-z0-9.-]+/api/$ ]]
+          umask 077
+          export PLOGGR_FIELD_KEYSTORE="$RUNNER_TEMP/ploggr-field.p12"
+          trap 'rm -f "$PLOGGR_FIELD_KEYSTORE"' EXIT
+          printf '%s' "$FIELD_KEYSTORE_BASE64" | base64 --decode > "$PLOGGR_FIELD_KEYSTORE"
+          unset FIELD_KEYSTORE_BASE64
+          flutter build apk --no-pub --release --build-number "$GITHUB_RUN_NUMBER" \
+            --dart-define="API_BASE_URL=$FIELD_API_URL" --dart-define=PLOGGR_FIELD_TEST=true
+          cp build/app/outputs/flutter-apk/app-release.apk ploggr-field.apk
+      - name: Publish APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="field-$GITHUB_RUN_NUMBER"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" ploggr-field.apk --clobber
+          else
+            gh release create "$tag" ploggr-field.apk --target "$GITHUB_SHA" --prerelease \
+              --title "Ploggr Field $GITHUB_RUN_NUMBER" --notes "Android build from commit $GITHUB_SHA."
+          fi

@@ -11,7 +11,7 @@
     <application
         android:dataExtractionRules="@xml/session_data_extraction"
         android:fullBackupContent="@xml/session_backup"
-        android:label="ploggr"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -4,6 +4,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val fieldKeystore = providers.environmentVariable("PLOGGR_FIELD_KEYSTORE")
+
 android {
     namespace = "com.example.ploggr"
     compileSdk = flutter.compileSdkVersion
@@ -24,6 +26,18 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = "ploggr"
+    }
+
+    signingConfigs {
+        if (fieldKeystore.isPresent) {
+            create("field") {
+                storeFile = file(fieldKeystore.get())
+                storePassword = providers.environmentVariable("PLOGGR_FIELD_STORE_PASSWORD").get()
+                keyAlias = "ploggr-field"
+                keyPassword = storePassword
+            }
+        }
     }
 
     buildTypes {
@@ -33,6 +47,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+// Keep the regular local APK path and give the CI build its own package and identity.
+if (fieldKeystore.isPresent) {
+    android.defaultConfig.applicationId = "com.example.ploggr.field"
+    android.defaultConfig.manifestPlaceholders["appLabel"] = "ploggr Field"
+    android.buildTypes.getByName("release").signingConfig = android.signingConfigs.getByName("field")
 }
 
 kotlin {
