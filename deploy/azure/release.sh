@@ -48,7 +48,7 @@ updated=$(jq -c --arg image "$image" --arg revision "$revision" --arg query "$qu
       {type: "Readiness", httpGet: {path: "/api/health/ready", port: 8080}, periodSeconds: 5, timeoutSeconds: 4, failureThreshold: 3},
       {type: "Liveness", httpGet: {path: "/api/health", port: 8080}, periodSeconds: 10}
     ] |
-    .scale = { minReplicas: 0, maxReplicas: 1, cooldownPeriod: 300, pollingInterval: 30, rules: [
+    .scale = { minReplicas: 0, maxReplicas: 1, cooldownPeriod: 90, pollingInterval: 30, rules: [
       {name: "http", http: {metadata: {concurrentRequests: "10"}}},
       {name: "photo-analysis", custom: {type: "postgresql", metadata: {query: $query, targetQueryValue: "1"},
         auth: [{secretRef: "scaler-connection", triggerParameter: "connection"}]}}

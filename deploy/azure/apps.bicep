@@ -16,8 +16,6 @@ param scalerConnection string
 param authSecret string
 @secure()
 param geminiKey string
-@secure()
-param fieldEmail string
 
 var placeholder = 'docker.io/nginxinc/nginx-unprivileged:stable-alpine'
 var registry = { server: registryHost, identity: identityId }
@@ -50,7 +48,6 @@ resource api 'Microsoft.App/containerApps@2025-07-01' = {
         { name: 'scaler-connection', value: scalerConnection }
         { name: 'auth-secret', value: authSecret }
         { name: 'gemini-key', value: geminiKey }
-        { name: 'field-email', value: fieldEmail }
       ]
     }
     template: {
@@ -61,7 +58,6 @@ resource api 'Microsoft.App/containerApps@2025-07-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: concat(databaseVariables, [
             { name: 'AUTH_SECRET', secretRef: 'auth-secret' }
-            { name: 'AUTH_FIELD_TEST_EMAIL', secretRef: 'field-email' }
             { name: 'GEMINI_API_KEY', secretRef: 'gemini-key' }
             { name: 'GEMINI_MODEL', value: geminiModel }
             { name: 'GEMINI_FALLBACK_MODELS', value: '' }
