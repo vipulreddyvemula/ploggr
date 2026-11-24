@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${AZURE_RESOURCE_GROUP:?}" "${FIELD_KEYSTORE:?}" "${FIELD_KEYSTORE_PASSWORD:?}"
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+repo_subject=$(gh api "repos/$repo" --jq '"\(.owner.login)@\(.owner.id)/\(.name)@\(.id)"')
 branch=feature/live-litter-map
 environment=ploggr-field-android
 
@@ -23,7 +24,7 @@ client=$(jq -r .clientId <<<"$identity")
 
 az identity federated-credential create -g "$AZURE_RESOURCE_GROUP" --identity-name ploggr-field-github \
   -n github-field-branch --issuer https://token.actions.githubusercontent.com \
-  --subject "repo:$repo:ref:refs/heads/$branch" --audiences api://AzureADTokenExchange -o none
+  --subject "repo:$repo_subject:ref:refs/heads/$branch" --audiences api://AzureADTokenExchange -o none
 az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
   --role AcrPush --scope "$registry_id" -o none
 az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
