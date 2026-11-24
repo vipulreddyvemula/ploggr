@@ -118,8 +118,9 @@ jobs:
           trap 'rm -f "$PLOGGR_FIELD_KEYSTORE"' EXIT
           printf '%s' "$FIELD_KEYSTORE_BASE64" | base64 --decode > "$PLOGGR_FIELD_KEYSTORE"
           unset FIELD_KEYSTORE_BASE64
-          flutter build apk --no-pub --release --build-number "$GITHUB_RUN_NUMBER" \
+          flutter build apk --release --build-number "$GITHUB_RUN_NUMBER" \
             --dart-define="API_BASE_URL=$FIELD_API_URL" --dart-define=PLOGGR_FIELD_TEST=true
+          git diff --exit-code -- pubspec.lock
           cp build/app/outputs/flutter-apk/app-release.apk ploggr-field.apk
       - name: Publish APK
         env:
