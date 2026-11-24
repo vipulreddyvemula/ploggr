@@ -44,6 +44,10 @@ When the key is omitted, desktop debug builds use the offline preview. Android s
 
 For LAN access, use the computer's actual address and allow the API port on the trusted local network. Database access stays on loopback. M1.8 verified Linux and the Android emulator. M1.7 verified a USB-forwarded Android phone. [USB forwarding](connection-check.md#android-over-usb) · [Validation evidence](foundation-validation.md#validation-evidence)
 
+## Ploggr Field updates
+
+Ploggr Field checks GitHub for new builds on launch and return to the foreground. Use **Profile → Settings → Check for updates** to refresh immediately. Tap **Update** to download and verify the signed APK, then confirm in Android. If Android opens **Install unknown apps**, allow installs from Ploggr Field and tap **Update** again.
+
 ## Public configuration and secrets
 
 Flutter build defines are visible to anyone with the app. Use them only for public settings. Keep database credentials on the server. Git ignores local environment files, local JSON, and signing material. Check those rules from the repository root without printing file contents.

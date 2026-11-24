@@ -18,6 +18,9 @@ import 'package:ploggr/features/plogging/application/session_controller.dart'
 import 'package:ploggr/features/profile/profile_controller.dart';
 import 'package:ploggr/features/plogging/application/active_track.dart';
 import 'package:ploggr/features/plogging/data/location_source.dart';
+import 'package:ploggr/features/updates/field_update_controller.dart';
+import 'package:ploggr/features/updates/field_update_service.dart';
+import 'package:ploggr/features/updates/field_update_widgets.dart';
 
 class PloggrApp extends ConsumerStatefulWidget {
   const PloggrApp({super.key});
@@ -91,6 +94,7 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
     }, fireImmediately: true);
     _lifecycle = AppLifecycleListener(
       onResume: () {
+        _checkForUpdate();
         final phase = ref.read(sessionControllerProvider).phase;
         if (phase == SessionPhase.signedIn) {
           unawaited(sync());
@@ -102,6 +106,15 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
         }
       },
     );
+    if (fieldUpdatesEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    }
+  }
+
+  void _checkForUpdate() {
+    if (mounted && fieldUpdatesEnabled) {
+      unawaited(ref.read(fieldUpdateProvider.notifier).check(automatic: true));
+    }
   }
 
   @override
@@ -127,7 +140,7 @@ class _PloggrAppState extends ConsumerState<PloggrApp> {
       routerConfig: router,
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
         value: AppTheme.systemBars(Theme.of(context).colorScheme),
-        child: child!,
+        child: fieldUpdatesEnabled ? FieldUpdateShell(child: child!) : child!,
       ),
     );
   }

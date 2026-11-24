@@ -54,6 +54,10 @@ if (fieldKeystore.isPresent) {
     android.defaultConfig.applicationId = "com.example.ploggr.field"
     android.defaultConfig.manifestPlaceholders["appLabel"] = "ploggr Field"
     android.buildTypes.getByName("release").signingConfig = android.signingConfigs.getByName("field")
+    android.sourceSets.getByName("release") {
+        manifest.srcFile("src/field/AndroidManifest.xml")
+        res.srcDir("src/field/res")
+    }
 }
 
 kotlin {

@@ -16,6 +16,8 @@ import '../auth/session/session_controller.dart' show sessionControllerProvider;
 import '../litter/application/litter_controller.dart';
 import 'profile_controller.dart';
 import '../progress/progress_panel.dart';
+import '../updates/field_update_service.dart';
+import '../updates/field_update_widgets.dart';
 
 enum ProfileSection {
   activity(AppRoutes.activity, 'My Activity', Icons.work_history_outlined),
@@ -701,6 +703,7 @@ class _ProfileDetailPageState extends ConsumerState<ProfileDetailPage> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => openPage(context, AppRoutes.connection),
         ),
+        if (fieldUpdatesEnabled) const FieldUpdateSettings(),
         ListTile(
           leading: Icon(Icons.slideshow_rounded, color: context.colors.primary),
           title: const Text('Replay onboarding'),

@@ -24,6 +24,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        if (packageName == "com.example.ploggr.field") {
+            FieldUpdateInstaller(this).register(messenger)
+        }
         MethodChannel(messenger, "ploggr/share").setMethodCallHandler { call, result ->
             if (call.method == "text" && call.arguments is String) {
                 val intent = Intent(Intent.ACTION_SEND).apply {
