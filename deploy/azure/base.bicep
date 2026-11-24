@@ -62,10 +62,11 @@ resource evidenceAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
-  name: 'ploggr-field'
+resource environment 'Microsoft.App/managedEnvironments@2026-07-01' = {
+  name: 'ploggr-field-runtime'
   location: location
   properties: {
+    environmentMode: 'WorkloadProfiles'
     workloadProfiles: [
       { name: 'Consumption', workloadProfileType: 'Consumption' }
     ]

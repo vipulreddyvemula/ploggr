@@ -26,6 +26,8 @@ az identity federated-credential create -g "$AZURE_RESOURCE_GROUP" --identity-na
   --subject "repo:$repo:ref:refs/heads/$branch" --audiences api://AzureADTokenExchange -o none
 az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
   --role AcrPush --scope "$registry_id" -o none
+az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
+  --role Reader --scope "$registry_id" -o none
 for scope in "$app_id" "$job_id"; do
   az role assignment create --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
     --role 'Container Apps Contributor' --scope "$scope" -o none
